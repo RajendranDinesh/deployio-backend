@@ -26,12 +26,20 @@ func InitDBConnection() {
 		os.Exit(1)
 	}
 
-	DataBase, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", username, password, host, port, databaseName))
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", username, password, host, port, databaseName)
 
-	if err != nil || DataBase == nil {
-		log.Fatalln(err)
+	DataBase, err = sql.Open("postgres", connStr)
+
+	if err != nil {
+		log.Println(err)
 		log.Fatalln("[DATABASE] Connection probs..")
-		os.Exit(1)
+	}
+
+	err = DataBase.Ping()
+
+	if err != nil {
+		log.Println(err)
+		log.Fatalln("[DATABASE] Could not ping the db.")
 	}
 
 	fmt.Printf("[DATABASE] Connected to %s\n", databaseName)
