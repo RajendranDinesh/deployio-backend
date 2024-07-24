@@ -16,27 +16,32 @@ import (
 	"github.com/go-chi/jwtauth/v5"
 )
 
-func (u UserHandler) SignIn(w http.ResponseWriter, r *http.Request) {
+func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	var user UserSignInPayload
 
 	// gets Code from body and stores it into user
 	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
-		ErrInternalServer(err, w)
+		utils.ErrInternalServer(err, w)
 		return
 	}
 
-	cId, cSecret := getClientIdnSecret()
+	if len(strings.TrimSpace(user.Code)) <= 0 {
+		utils.ErrInvalid(fmt.Errorf("invalid code"), w)
+		return
+	}
 
-	response, err := getOauthResponse(cId, cSecret, user)
+	cId, cSecret := GetClientIdnSecret()
+
+	response, err := GetOauthResponse(cId, cSecret, user)
 	if err != nil {
-		ErrInvalid(err, w)
+		utils.ErrInvalid(err, w)
 		return
 	}
 
 	email, err := getUserEmail(response.AccessToken)
 	if err != nil {
-		ErrInternalServer(err, w)
+		utils.ErrInternalServer(err, w)
 		return
 	}
 
@@ -47,7 +52,7 @@ func (u UserHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 		userInfo, err := FetchUserInfoFromGitHub(response.AccessToken)
 
 		if err != nil {
-			ErrInternalServer(err, w)
+			utils.ErrInternalServer(err, w)
 			return
 		}
 
@@ -63,7 +68,7 @@ func (u UserHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 		userId, err = InsertNewUser(user)
 
 		if err != nil {
-			ErrInternalServer(err, w)
+			utils.ErrInternalServer(err, w)
 			return
 		}
 
@@ -73,17 +78,21 @@ func (u UserHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 
 	jwtToken := generateJWT(*userId)
 
-	responseBody, err := json.Marshal(jwtToken)
+	body := map[string]string{
+		"token": jwtToken,
+	}
+
+	responseBody, err := json.Marshal(body)
 
 	if err != nil {
-		ErrInternalServer(err, w)
+		utils.ErrInternalServer(err, w)
 		return
 	}
 
 	w.Write([]byte(responseBody))
 }
 
-func getOauthResponse(cId string, cSecret string, user UserSignInPayload) (GH_UAT_API_Response, error) {
+func GetOauthResponse(cId string, cSecret string, user UserSignInPayload) (GH_UAT_API_Response, error) {
 
 	var GHAPIResponse GH_UAT_API_Response
 	var GhAPIError GhError
@@ -93,7 +102,13 @@ func getOauthResponse(cId string, cSecret string, user UserSignInPayload) (GH_UA
 	params := map[string]string{
 		"client_id":     cId,
 		"client_secret": cSecret,
-		"code":          user.Code,
+	}
+
+	if len(strings.TrimSpace(user.Code)) > 0 {
+		params["code"] = user.Code
+	} else if len(strings.TrimSpace(user.RefreshToken)) > 0 {
+		params["refresh_token"] = user.RefreshToken
+		params["grant_type"] = "refresh_token"
 	}
 
 	resp, err := utils.Request("POST", "https://github.com/login/oauth/access_token", nil, &params, nil)
@@ -134,15 +149,41 @@ func getOauthResponse(cId string, cSecret string, user UserSignInPayload) (GH_UA
 	return GHAPIResponse, err
 }
 
+func AreTokensValid(userId int) (bool, bool) {
+	isAccessValid := false
+	isRefreshValid := false
+
+	query := `
+	SELECT
+		CASE
+			WHEN u.access_expires_by > current_timestamp at TIME zone 'Asia/Kolkata' THEN true
+			ELSE false
+		END AS is_access_valid,
+		CASE
+			WHEN u.refresh_expires_by > current_timestamp at TIME zone 'Asia/Kolkata' THEN true
+			ELSE false
+		END AS is_refresh_valid
+	FROM "deploy-io".users u
+	WHERE u.id = $1`
+
+	err := config.DataBase.QueryRow(query, userId).Scan(&isAccessValid, &isRefreshValid)
+	if err != nil {
+		println("[AUTH] ", err.Error())
+		return false, false
+	}
+
+	return isAccessValid, isRefreshValid
+}
+
 func generateJWT(userId int64) string {
-	tokenAuth := getJWTAuthConfig()
+	tokenAuth := GetJWTAuthConfig()
 
 	_, token, _ := tokenAuth.Encode(map[string]interface{}{"uId": userId})
 
 	return token
 }
 
-func getJWTAuthConfig() *jwtauth.JWTAuth {
+func GetJWTAuthConfig() *jwtauth.JWTAuth {
 	jwtSecret := os.Getenv("JWT_SECRET")
 
 	if len(strings.TrimSpace(jwtSecret)) == 0 {
@@ -205,7 +246,7 @@ func InsertNewUser(user User) (*int64, error) {
 		return nil, err
 	}
 
-	lastInsertId, err := result.RowsAffected()
+	lastInsertId, err := result.LastInsertId()
 
 	if err != nil || lastInsertId == 0 {
 		return nil, err
@@ -268,7 +309,7 @@ func getUserEmail(accessToken string) (*string, error) {
 	return &userEmail, nil
 }
 
-func getClientIdnSecret() (string, string) {
+func GetClientIdnSecret() (string, string) {
 	clientId := os.Getenv("GH_CLIENT_ID")
 	clientSecret := os.Getenv("GH_CLIENT_SECRET")
 
@@ -277,13 +318,4 @@ func getClientIdnSecret() (string, string) {
 	}
 
 	return clientId, clientSecret
-}
-
-func ErrInternalServer(err error, w http.ResponseWriter) {
-	println("[AUTH] ", err.Error())
-	http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-}
-
-func ErrInvalid(err error, w http.ResponseWriter) {
-	http.Error(w, "Invalid Request", http.StatusBadRequest)
 }

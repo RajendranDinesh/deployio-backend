@@ -2,10 +2,11 @@ package auth
 
 import "time"
 
-type UserHandler struct{}
+type AuthHandler struct{}
 
 type UserSignInPayload struct {
-	Code string `json:"code"`
+	Code         string `json:"code"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type GH_UAT_API_Response struct {
