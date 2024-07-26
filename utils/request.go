@@ -2,22 +2,18 @@ package utils
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	u "net/url"
+	"strconv"
+
+	"github.com/go-chi/jwtauth/v5"
 )
 
 func Request(method, url string, headers, params *map[string]string, body *[]byte) (*http.Response, error) {
 	client := &http.Client{}
 
-	if params != nil && len(*params) > 0 {
-		parameters := u.Values{}
-
-		for key, value := range *params {
-			parameters.Add(key, value)
-		}
-
-		url = url + "?" + parameters.Encode()
-	}
+	url = addParamsToURL(url, params)
 
 	var req *http.Request
 	var err error
@@ -29,9 +25,35 @@ func Request(method, url string, headers, params *map[string]string, body *[]byt
 	}
 
 	if err != nil {
+		fmt.Println("[REQUEST] Error building request")
 		return nil, err
 	}
 
+	addHeadersToRequest(req, headers)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func addParamsToURL(url string, params *map[string]string) string {
+	if params != nil && len(*params) > 0 {
+		parameters := u.Values{}
+
+		for key, value := range *params {
+			parameters.Add(key, value)
+		}
+
+		url = url + "?" + parameters.Encode()
+	}
+
+	return url
+}
+
+func addHeadersToRequest(req *http.Request, headers *map[string]string) {
 	req.Header.Set("Content-Type", "application/json")
 
 	req.Header.Set("Accept", "application/json")
@@ -45,11 +67,19 @@ func Request(method, url string, headers, params *map[string]string, body *[]byt
 			req.Header.Set(key, value)
 		}
 	}
+}
 
-	resp, err := client.Do(req)
+func GetUserIdFromContext(w http.ResponseWriter, r *http.Request) *int {
+	_, claims, _ := jwtauth.FromContext(r.Context())
+
+	userId, err := strconv.Atoi(fmt.Sprintf("%v", claims["uId"]))
+
 	if err != nil {
-		return nil, err
+		println("[REQUEST] Error Converting string to integer")
+		println(err.Error())
+		HandleError(ErrInvalid, err, w)
+		return nil
 	}
 
-	return resp, nil
+	return &userId
 }

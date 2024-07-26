@@ -37,7 +37,7 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 			if err != nil {
 				println(err.Error())
 				println("[USER] Error while fetching refresh token")
-				utils.ForcedRelogin(w)
+				utils.HandleError(utils.TokenExpired, err, w)
 				return
 			}
 
@@ -48,7 +48,7 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 			if err != nil {
 				println(err.Error())
 				println("[USER] Refresh id invalid")
-				utils.ForcedRelogin(w)
+				utils.HandleError(utils.TokenExpired, err, w)
 				return
 			}
 
@@ -56,7 +56,7 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		} else {
-			utils.ForcedRelogin(w)
+			utils.HandleError(utils.TokenExpired, err, w)
 			return
 		}
 	})

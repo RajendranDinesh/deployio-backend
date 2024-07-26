@@ -1,16 +1,24 @@
 package utils
 
-import "net/http"
+import (
+	"net/http"
+)
 
-func ErrInternalServer(err error, w http.ResponseWriter) {
-	println("[AUTH] ", err.Error())
-	http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+type ErrorType struct {
+	Code        int
+	Description string
 }
 
-func ErrInvalid(err error, w http.ResponseWriter) {
-	http.Error(w, "Invalid Request", http.StatusBadRequest)
-}
+var (
+	ErrUnAuthorized = ErrorType{http.StatusUnauthorized, "Do I know you?"}
+	ErrInvalid      = ErrorType{http.StatusBadRequest, "Invalid request"}
+	TokenExpired    = ErrorType{498, "Trying to imitate someone?"}
+	ErrInternal     = ErrorType{http.StatusInternalServerError, "Internal Server Error"}
+)
 
-func ForcedRelogin(w http.ResponseWriter) {
-	http.Error(w, "Token expired", 498)
+func HandleError(errType ErrorType, err error, w http.ResponseWriter) {
+	if err != nil {
+		http.Error(w, errType.Description, errType.Code)
+		println(err.Error())
+	}
 }

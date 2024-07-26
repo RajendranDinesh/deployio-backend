@@ -22,28 +22,20 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	// gets Code from body and stores it into user
 	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
-		utils.ErrInternalServer(err, w)
-		return
+		utils.HandleError(utils.ErrInvalid, nil, w)
 	}
 
 	if len(strings.TrimSpace(user.Code)) <= 0 {
-		utils.ErrInvalid(fmt.Errorf("invalid code"), w)
-		return
+		utils.HandleError(utils.ErrInvalid, nil, w)
 	}
 
 	cId, cSecret := GetClientIdnSecret()
 
 	response, err := GetOauthResponse(cId, cSecret, user)
-	if err != nil {
-		utils.ErrInvalid(err, w)
-		return
-	}
+	utils.HandleError(utils.ErrUnAuthorized, err, w)
 
 	email, err := getUserEmail(response.AccessToken)
-	if err != nil {
-		utils.ErrInternalServer(err, w)
-		return
-	}
+	utils.HandleError(utils.ErrUnAuthorized, err, w)
 
 	var userId *int64
 
@@ -51,10 +43,7 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	if !userExists && userId == nil {
 		userInfo, err := FetchUserInfoFromGitHub(response.AccessToken)
 
-		if err != nil {
-			utils.ErrInternalServer(err, w)
-			return
-		}
+		utils.HandleError(utils.ErrUnAuthorized, err, w)
 
 		var user User
 
@@ -67,10 +56,7 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 
 		userId, err = InsertNewUser(user)
 
-		if err != nil {
-			utils.ErrInternalServer(err, w)
-			return
-		}
+		utils.HandleError(utils.ErrUnAuthorized, err, w)
 
 	} else {
 		UpdateUserTokens(response, *userId)
@@ -83,11 +69,7 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseBody, err := json.Marshal(body)
-
-	if err != nil {
-		utils.ErrInternalServer(err, w)
-		return
-	}
+	utils.HandleError(utils.ErrUnAuthorized, err, w)
 
 	w.Write([]byte(responseBody))
 }
@@ -147,6 +129,19 @@ func GetOauthResponse(cId string, cSecret string, user UserSignInPayload) (GH_UA
 	}
 
 	return GHAPIResponse, err
+}
+
+func GetAccessToken(userId int) (*string, error) {
+	query := `SELECT u.access FROM "deploy-io".users u WHERE u.id = $1`
+
+	var accessToken string
+
+	err := config.DataBase.QueryRow(query, userId).Scan(&accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	return &accessToken, nil
 }
 
 func AreTokensValid(userId int) (bool, bool) {
@@ -210,13 +205,13 @@ func FetchUserInfoFromGitHub(accessToken string) (*GhUserNameResponse, error) {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("[AUTH] Error while reading GH's user API response.")
+		fmt.Println("[AUTH] Error while reading GH's user API response")
 		return nil, err
 	}
 
 	err = json.Unmarshal(respBody, &GhUserInfoResponse)
 	if err != nil {
-		fmt.Println("[AUTH] Error while reading GH's user API response.")
+		fmt.Println("[AUTH] Error while reading GH's user API response")
 		return nil, err
 	}
 

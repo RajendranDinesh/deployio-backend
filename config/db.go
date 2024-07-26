@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	_ "github.com/lib/pq"
 )
@@ -15,15 +14,14 @@ var DataBase *sql.DB
 func InitDBConnection() {
 	var err error
 
-	host := os.Getenv("DB_HOST")
-	port := os.Getenv("DB_PORT")
-	username := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASS")
-	databaseName := os.Getenv("DB_NAME")
+	host, hostExists := os.LookupEnv("DB_HOST")
+	port, portExists := os.LookupEnv("DB_PORT")
+	username, dbUserExists := os.LookupEnv("DB_USER")
+	password, dbPassExists := os.LookupEnv("DB_PASS")
+	databaseName, dbNameExists := os.LookupEnv("DB_NAME")
 
-	if IsStringEmpty(host) || IsStringEmpty(port) || IsStringEmpty(username) || IsStringEmpty(password) || IsStringEmpty(databaseName) {
+	if !hostExists || !portExists || !dbUserExists || !dbPassExists || !dbNameExists {
 		log.Fatalln("[DATABASE] Env probs..")
-		os.Exit(1)
 	}
 
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", username, password, host, port, databaseName)
@@ -43,8 +41,4 @@ func InitDBConnection() {
 	}
 
 	fmt.Printf("[DATABASE] Connected to %s\n", databaseName)
-}
-
-func IsStringEmpty(str string) bool {
-	return len(strings.TrimSpace(str)) == 0
 }
