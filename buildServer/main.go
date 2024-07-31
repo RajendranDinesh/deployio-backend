@@ -75,7 +75,7 @@ func CloneAndExtractRepository() {
 		log.Fatalln(err)
 	}
 
-	req.Header.Set("Authorization", "Bearer ghu_eCMhx5SJOfm9KLL2ErKSC7KxfVsIc72ktW9O")
+	req.Header.Set("Authorization", "Bearer ")
 
 	resp, err := client.Do(req)
 	if err != nil {
