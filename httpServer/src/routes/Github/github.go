@@ -1,8 +1,8 @@
 package github
 
 import (
-	"deployio-backend/src/middleware"
-	auth "deployio-backend/src/routes/Auth"
+	"httpServer/src/middleware"
+	auth "httpServer/src/routes/Auth"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/jwtauth/v5"
@@ -19,7 +19,7 @@ func GithubRouter() chi.Router {
 
 		r.Use(middleware.GithubTokenValidation)
 
-		r.Get("/", gHandler.GetUserRepositories)
+		r.Get("/repos", gHandler.GetUserRepositories)
 	})
 
 	return r

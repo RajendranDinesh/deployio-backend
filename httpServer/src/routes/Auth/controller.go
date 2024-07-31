@@ -2,10 +2,10 @@ package auth
 
 import (
 	"database/sql"
-	"deployio-backend/config"
-	"deployio-backend/utils"
 	"encoding/json"
 	"fmt"
+	"httpServer/config"
+	"httpServer/utils"
 	"io"
 	"log"
 	"net/http"

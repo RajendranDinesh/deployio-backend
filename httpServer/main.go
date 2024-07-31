@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"deployio-backend/config"
-	"deployio-backend/src"
+	"httpServer/config"
+	"httpServer/src"
 
 	"github.com/joho/godotenv"
 )
@@ -98,6 +98,7 @@ func getIPAddress() string {
 
 	return ipAddress
 }
+
 func printTitle() {
 	println(`
 ░▒▓███████▓▒░░▒▓████████▓▒░▒▓███████▓▒░░▒▓█▓▒░      ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░            ░▒▓█▓▒░░▒▓██████▓▒░       

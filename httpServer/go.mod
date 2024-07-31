@@ -1,4 +1,4 @@
-module deployio-backend
+module httpServer
 
 go 1.22.1
 

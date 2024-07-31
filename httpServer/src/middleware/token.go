@@ -1,10 +1,10 @@
 package middleware
 
 import (
-	"deployio-backend/config"
-	auth "deployio-backend/src/routes/Auth"
-	"deployio-backend/utils"
 	"fmt"
+	"httpServer/config"
+	auth "httpServer/src/routes/Auth"
+	"httpServer/utils"
 	"net/http"
 	"strconv"
 

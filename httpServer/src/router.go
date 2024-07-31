@@ -1,9 +1,9 @@
 package src
 
 import (
-	auth "deployio-backend/src/routes/Auth"
-	github "deployio-backend/src/routes/Github"
-	user "deployio-backend/src/routes/User"
+	auth "httpServer/src/routes/Auth"
+	github "httpServer/src/routes/Github"
+	user "httpServer/src/routes/User"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -29,6 +29,10 @@ func Service() http.Handler {
 	router.Mount("/api/v1/auth", auth.AuthRouter())
 	router.Mount("/api/v1/dashboard", user.UserRouter())
 	router.Mount("/api/v1/github", github.GithubRouter())
+
+	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+	})
 
 	return router
 }

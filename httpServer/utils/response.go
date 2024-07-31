@@ -18,7 +18,7 @@ var (
 
 func HandleError(errType ErrorType, err error, w http.ResponseWriter) {
 	if err != nil {
-		http.Error(w, errType.Description, errType.Code)
 		println(err.Error())
+		http.Error(w, errType.Description, errType.Code)
 	}
 }

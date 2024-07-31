@@ -1,10 +1,10 @@
 package github
 
 import (
-	auth "deployio-backend/src/routes/Auth"
-	"deployio-backend/utils"
 	"encoding/json"
 	"fmt"
+	auth "httpServer/src/routes/Auth"
+	"httpServer/utils"
 	"io"
 	"net/http"
 )
