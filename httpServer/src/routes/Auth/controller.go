@@ -22,20 +22,28 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	// gets Code from body and stores it into user
 	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
-		utils.HandleError(utils.ErrInvalid, nil, w)
+		utils.HandleError(utils.ErrInvalid, nil, w, nil)
+		return
 	}
 
 	if len(strings.TrimSpace(user.Code)) <= 0 {
-		utils.HandleError(utils.ErrInvalid, nil, w)
+		utils.HandleError(utils.ErrInvalid, nil, w, nil)
+		return
 	}
 
 	cId, cSecret := GetClientIdnSecret()
 
 	response, err := GetOauthResponse(cId, cSecret, user)
-	utils.HandleError(utils.ErrUnAuthorized, err, w)
+	if err != nil {
+		utils.HandleError(utils.ErrUnAuthorized, err, w, nil)
+		return
+	}
 
 	email, err := getUserEmail(response.AccessToken)
-	utils.HandleError(utils.ErrUnAuthorized, err, w)
+	if err != nil {
+		utils.HandleError(utils.ErrUnAuthorized, err, w, nil)
+		return
+	}
 
 	var userId *int64
 
@@ -43,7 +51,10 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	if !userExists && userId == nil {
 		userInfo, err := FetchUserInfoFromGitHub(response.AccessToken)
 
-		utils.HandleError(utils.ErrUnAuthorized, err, w)
+		if err != nil {
+			utils.HandleError(utils.ErrUnAuthorized, err, w, nil)
+			return
+		}
 
 		var user User
 
@@ -56,7 +67,10 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 
 		userId, err = InsertNewUser(user)
 
-		utils.HandleError(utils.ErrUnAuthorized, err, w)
+		if err != nil {
+			utils.HandleError(utils.ErrUnAuthorized, err, w, nil)
+			return
+		}
 
 	} else {
 		UpdateUserTokens(response, *userId)
@@ -69,7 +83,10 @@ func (u AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	responseBody, err := json.Marshal(body)
-	utils.HandleError(utils.ErrUnAuthorized, err, w)
+	if err != nil {
+		utils.HandleError(utils.ErrUnAuthorized, err, w, nil)
+		return
+	}
 
 	w.Write([]byte(responseBody))
 }
@@ -151,11 +168,11 @@ func AreTokensValid(userId int) (bool, bool) {
 	query := `
 	SELECT
 		CASE
-			WHEN u.access_expires_by > current_timestamp at TIME zone 'Asia/Kolkata' THEN true
+			WHEN u.access_expires_by > current_timestamp at TIME ZONE 'Asia/Kolkata' THEN true
 			ELSE false
 		END AS is_access_valid,
 		CASE
-			WHEN u.refresh_expires_by > current_timestamp at TIME zone 'Asia/Kolkata' THEN true
+			WHEN u.refresh_expires_by > current_timestamp at TIME ZONE 'Asia/Kolkata' THEN true
 			ELSE false
 		END AS is_refresh_valid
 	FROM "deploy-io".users u
@@ -173,9 +190,9 @@ func AreTokensValid(userId int) (bool, bool) {
 func generateJWT(userId int64) string {
 	tokenAuth := GetJWTAuthConfig()
 
-	_, token, _ := tokenAuth.Encode(map[string]interface{}{"uId": userId})
+	_, tokenStr, _ := tokenAuth.Encode(map[string]interface{}{"uId": userId, "exp": time.Now().AddDate(0, 1, 0)})
 
-	return token
+	return tokenStr
 }
 
 func GetJWTAuthConfig() *jwtauth.JWTAuth {

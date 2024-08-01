@@ -35,9 +35,8 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 			query := `SELECT refresh FROM "deploy-io".users WHERE id = $1`
 			err := config.DataBase.QueryRow(query, userId).Scan(&refreshToken)
 			if err != nil {
-				println(err.Error())
-				println("[USER] Error while fetching refresh token")
-				utils.HandleError(utils.TokenExpired, err, w)
+				errMsg := "[USER] Error while fetching refresh token"
+				utils.HandleError(utils.TokenExpired, err, w, &errMsg)
 				return
 			}
 
@@ -46,9 +45,8 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 
 			response, err := auth.GetOauthResponse(cId, cSecret, TokenPayload)
 			if err != nil {
-				println(err.Error())
-				println("[USER] Refresh id invalid")
-				utils.HandleError(utils.TokenExpired, err, w)
+				errMsg := "[USER] Refresh id invalid"
+				utils.HandleError(utils.TokenExpired, err, w, &errMsg)
 				return
 			}
 
@@ -56,7 +54,7 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		} else {
-			utils.HandleError(utils.TokenExpired, err, w)
+			utils.HandleError(utils.TokenExpired, err, w, nil)
 			return
 		}
 	})

@@ -24,7 +24,7 @@ func InitDBConnection() {
 		log.Fatalln("[DATABASE] Env probs..")
 	}
 
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", username, password, host, port, databaseName)
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&Timezone=Asia/Kolkata", username, password, host, port, databaseName)
 
 	DataBase, err = sql.Open("postgres", connStr)
 

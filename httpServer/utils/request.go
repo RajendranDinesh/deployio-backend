@@ -75,9 +75,8 @@ func GetUserIdFromContext(w http.ResponseWriter, r *http.Request) *int {
 	userId, err := strconv.Atoi(fmt.Sprintf("%v", claims["uId"]))
 
 	if err != nil {
-		println("[REQUEST] Error Converting string to integer")
-		println(err.Error())
-		HandleError(ErrInvalid, err, w)
+		errMsg := "[REQUEST] Error Converting string to integer"
+		HandleError(ErrInvalid, err, w, &errMsg)
 		return nil
 	}
 

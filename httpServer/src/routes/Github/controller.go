@@ -17,10 +17,16 @@ func (gHandler GithubHandler) GetUserRepositories(w http.ResponseWriter, r *http
 	}
 
 	repositories, err := getUserRepositories(*userId)
-	utils.HandleError(utils.ErrInternal, err, w)
+	if err != nil {
+		utils.HandleError(utils.ErrInternal, err, w, nil)
+		return
+	}
 
 	body, err := json.Marshal(repositories)
-	utils.HandleError(utils.ErrInternal, err, w)
+	if err != nil {
+		utils.HandleError(utils.ErrInternal, err, w, nil)
+		return
+	}
 
 	w.Write([]byte(body))
 }
