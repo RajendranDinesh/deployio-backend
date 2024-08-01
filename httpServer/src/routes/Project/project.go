@@ -16,6 +16,7 @@ func ProjectRouter() chi.Router {
 		r.Use(jwtauth.Verifier(auth.GetJWTAuthConfig()))
 		r.Use(jwtauth.Authenticator(auth.GetJWTAuthConfig()))
 
+		r.Get("/all", p.ListProjects)
 		r.Post("/new", p.CreateNewProject)
 	})
 

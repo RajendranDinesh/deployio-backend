@@ -252,19 +252,13 @@ func UpdateUserTokens(response GH_UAT_API_Response, id int64) bool {
 }
 
 func InsertNewUser(user User) (*int64, error) {
-	result, err := config.DataBase.Exec("INSERT INTO \"deploy-io\".users(email, name, access, refresh, access_expires_by, refresh_expires_by) VALUES($1, $2, $3, $4, $5, $6)", user.Email, user.Name, user.Access, user.Refresh, time.Now().Add(user.Access_expires_by*time.Second), time.Now().Add(user.Refresh_expires_by*time.Second))
-
+	var userId int64
+	err := config.DataBase.QueryRow("INSERT INTO \"deploy-io\".users(email, name, access, refresh, access_expires_by, refresh_expires_by) VALUES($1, $2, $3, $4, $5, $6) RETURNING id", user.Email, user.Name, user.Access, user.Refresh, time.Now().Add(user.Access_expires_by*time.Second), time.Now().Add(user.Refresh_expires_by*time.Second)).Scan(&userId)
 	if err != nil {
 		return nil, err
 	}
 
-	lastInsertId, err := result.LastInsertId()
-
-	if err != nil || lastInsertId == 0 {
-		return nil, err
-	}
-
-	return &lastInsertId, nil
+	return &userId, nil
 }
 
 func DoesUserExists(emailId string) (*int64, bool) {

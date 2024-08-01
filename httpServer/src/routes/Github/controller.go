@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-func (gHandler GithubHandler) GetUserRepositories(w http.ResponseWriter, r *http.Request) {
+func (gHandler GithubHandler) ListUserRepositories(w http.ResponseWriter, r *http.Request) {
 	userId := utils.GetUserIdFromContext(w, r)
 
 	if userId == nil {

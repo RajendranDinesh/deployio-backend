@@ -19,7 +19,7 @@ func GithubRouter() chi.Router {
 
 		r.Use(middleware.GithubTokenValidation)
 
-		r.Get("/repos", gHandler.GetUserRepositories)
+		r.Get("/repos", gHandler.ListUserRepositories)
 	})
 
 	return r
