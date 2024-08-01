@@ -1,7 +1,12 @@
 package project
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"httpServer/config"
 	"httpServer/utils"
 	"io"
@@ -9,6 +14,156 @@ import (
 	"os"
 	"strings"
 )
+
+func (p ProjectHandler) InsertEnvironments(w http.ResponseWriter, r *http.Request) {
+	body, readBodyErr := io.ReadAll(r.Body)
+	if readBodyErr != nil {
+		utils.HandleError(utils.ErrInvalid, readBodyErr, w, nil)
+		return
+	}
+
+	var requestBody InsertEnvironmentBody
+
+	jsonDestructErr := json.Unmarshal(body, &requestBody)
+	if jsonDestructErr != nil {
+		utils.HandleError(utils.ErrInvalid, jsonDestructErr, w, nil)
+		return
+	}
+
+	insertQuery := `INSERT INTO "deploy-io".environments(project_id, key, value) VALUES($1, $2, $3)`
+	insertStatement, preparationErr := config.DataBase.Prepare(insertQuery)
+	if preparationErr != nil {
+		utils.HandleError(utils.ErrInternal, preparationErr, w, nil)
+		return
+	}
+
+	defer insertStatement.Close()
+
+	for _, environment := range requestBody.Environments {
+		val, valErr := encrypt(environment.Value)
+
+		if valErr != nil {
+			utils.HandleError(utils.ErrInternal, valErr, w, nil)
+			return
+		}
+
+		_, insertErr := insertStatement.Exec(environment.ProjectId, environment.Key, val)
+		if insertErr != nil {
+			utils.HandleError(utils.ErrInternal, insertErr, w, nil)
+			return
+		}
+	}
+
+	responseBody := map[string]string{
+		"msg": "Inserted environments",
+	}
+
+	response, constructorErr := json.Marshal(responseBody)
+	if constructorErr != nil {
+		utils.HandleError(utils.ErrInternal, constructorErr, w, nil)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(response)
+}
+
+func (p ProjectHandler) ListEnvKeys(w http.ResponseWriter, r *http.Request) {
+	body, readBodyErr := io.ReadAll(r.Body)
+	if readBodyErr != nil {
+		utils.HandleError(utils.ErrInvalid, readBodyErr, w, nil)
+		return
+	}
+
+	userId := utils.GetUserIdFromContext(w, r)
+	if userId == nil {
+		utils.HandleError(utils.TokenExpired, nil, w, nil)
+		return
+	}
+
+	var requestBody ListEnvKeysBody
+	jsonDestructErr := json.Unmarshal(body, &requestBody)
+	if jsonDestructErr != nil {
+		utils.HandleError(utils.ErrInvalid, jsonDestructErr, w, nil)
+		return
+	}
+
+	query := `SELECT e.key FROM "deploy-io".environments e JOIN "deploy-io".projects p ON p.id = e.project_id AND p.id = $1 AND p.user_id = $2`
+	rows, queryErr := config.DataBase.Query(query, requestBody.ProjectId, userId)
+	if queryErr != nil {
+		utils.HandleError(utils.ErrInvalid, queryErr, w, nil)
+		return
+	}
+
+	defer rows.Close()
+
+	var envKeys []string
+
+	for rows.Next() {
+		var env string
+		rowsErr := rows.Scan(&env)
+		if rowsErr != nil {
+			utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
+			return
+		}
+
+		envKeys = append(envKeys, env)
+	}
+
+	responseBody := map[string][]string{
+		"keys": envKeys,
+	}
+
+	response, constructorErr := json.Marshal(responseBody)
+	if constructorErr != nil {
+		utils.HandleError(utils.ErrInternal, constructorErr, w, nil)
+		return
+	}
+
+	w.Write(response)
+}
+
+func (p ProjectHandler) UpdateEnvValue(w http.ResponseWriter, r *http.Request) {
+	body, readBodyErr := io.ReadAll(r.Body)
+	if readBodyErr != nil {
+		utils.HandleError(utils.ErrInvalid, readBodyErr, w, nil)
+		return
+	}
+
+	var requestBody UpdateEnvironmentBody
+
+	jsonDestructErr := json.Unmarshal(body, &requestBody)
+	if jsonDestructErr != nil {
+		utils.HandleError(utils.ErrInvalid, jsonDestructErr, w, nil)
+		return
+	}
+
+	encryptedValue, encErr := encrypt(requestBody.Value)
+	if encErr != nil {
+		utils.HandleError(utils.ErrInvalid, encErr, w, nil)
+		return
+	}
+
+	updateQuery := `UPDATE "deploy-io".environments SET value = $1 WHERE project_id = $2 AND key = $3`
+	_, updateErr := config.DataBase.Exec(updateQuery, encryptedValue, requestBody.ProjectId, requestBody.Key)
+	if updateErr != nil {
+		utils.HandleError(utils.ErrInternal, updateErr, w, nil)
+		return
+	}
+
+	responseBody := map[string]string{
+		"msg": "Updated environment variable",
+	}
+
+	response, constructorErr := json.Marshal(responseBody)
+	if constructorErr != nil {
+		utils.HandleError(utils.ErrInternal, constructorErr, w, nil)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(response)
+}
 
 func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	userId := utils.GetUserIdFromContext(w, r)
@@ -131,4 +286,30 @@ func getDefaultBuildCommandAndOpFolder() (string, string) {
 	}
 
 	return buildCommand, outputFolder
+}
+
+func encrypt(text string) (string, error) {
+	key, keyExists := os.LookupEnv("ENV_SECRET")
+	if !keyExists {
+		return "", fmt.Errorf("[ENC] env secret is not accessible")
+	}
+
+	keyBytes := []byte(key)
+
+	block, err := aes.NewCipher(keyBytes)
+	if err != nil {
+		return "", err
+	}
+
+	cipherText := make([]byte, aes.BlockSize+len(text))
+	iv := cipherText[:aes.BlockSize]
+
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return "", err
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(cipherText[aes.BlockSize:], []byte(text))
+
+	return hex.EncodeToString(cipherText), nil
 }
