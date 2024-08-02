@@ -2,6 +2,7 @@ package src
 
 import (
 	auth "httpServer/src/routes/Auth"
+	build "httpServer/src/routes/Build"
 	github "httpServer/src/routes/Github"
 	project "httpServer/src/routes/Project"
 	user "httpServer/src/routes/User"
@@ -31,6 +32,7 @@ func Service() http.Handler {
 	router.Mount("/api/v1/dashboard", user.UserRouter())
 	router.Mount("/api/v1/github", github.GithubRouter())
 	router.Mount("/api/v1/project", project.ProjectRouter())
+	router.Mount("/api/v1/build", build.BuildRouter())
 
 	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
