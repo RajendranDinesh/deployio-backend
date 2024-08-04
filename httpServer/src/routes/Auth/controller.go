@@ -190,7 +190,7 @@ func AreTokensValid(userId int) (bool, bool) {
 func generateJWT(userId int64) string {
 	tokenAuth := GetJWTAuthConfig()
 
-	_, tokenStr, _ := tokenAuth.Encode(map[string]interface{}{"uId": userId, "exp": time.Now().AddDate(0, 1, 0)})
+	_, tokenStr, _ := tokenAuth.Encode(map[string]interface{}{"uId": userId}) //,"exp": time.Now().AddDate(0, 1, 0)})
 
 	return tokenStr
 }
