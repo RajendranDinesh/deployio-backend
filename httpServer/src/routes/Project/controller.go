@@ -174,7 +174,7 @@ func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 	var projects []ListProject
 
-	query := `SELECT id, name, github_id, build_command, output_folder, created_at FROM "deploy-io".projects WHERE user_id = $1`
+	query := `SELECT id, name, github_id, install_command, build_command, output_folder, created_at FROM "deploy-io".projects WHERE user_id = $1`
 	rows, queryErr := config.DataBase.Query(query, userId)
 	if queryErr != nil {
 		utils.HandleError(utils.ErrInvalid, queryErr, w, nil)
@@ -185,7 +185,7 @@ func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var project ListProject
-		rowsErr := rows.Scan(&project.Id, &project.Name, &project.GithubId, &project.BuildCommand, &project.OutputFolder, &project.CreatedAt)
+		rowsErr := rows.Scan(&project.Id, &project.Name, &project.GithubId, &project.InstallCommand, &project.BuildCommand, &project.OutputFolder, &project.CreatedAt)
 		if rowsErr != nil {
 			utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 			return
@@ -227,7 +227,11 @@ func (p ProjectHandler) CreateNewProject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	buildCommand, outputFolder := getDefaultBuildCommandAndOpFolder()
+	installCommand, buildCommand, outputFolder := getDefaults()
+
+	if project.InstallCommand == nil {
+		project.InstallCommand = &installCommand
+	}
 
 	if project.BuildCommand == nil {
 		project.BuildCommand = &buildCommand
@@ -239,7 +243,7 @@ func (p ProjectHandler) CreateNewProject(w http.ResponseWriter, r *http.Request)
 
 	userId := utils.GetUserIdFromContext(w, r)
 
-	projectId, dbErr := insertProjectIntoDB(*userId, project.Name, project.GithubId, *project.BuildCommand, *project.OutputFolder)
+	projectId, dbErr := insertProjectIntoDB(*userId, project.Name, project.GithubId, *project.InstallCommand, *project.BuildCommand, *project.OutputFolder)
 	if dbErr != nil {
 
 		if strings.Contains(dbErr.Error(), "duplicate key") {
@@ -264,10 +268,10 @@ func (p ProjectHandler) CreateNewProject(w http.ResponseWriter, r *http.Request)
 	w.Write([]byte(response))
 }
 
-func insertProjectIntoDB(userId int, name string, githubId int, buildCommand string, outputFolder string) (*int, error) {
+func insertProjectIntoDB(userId int, name string, githubId int, installCommand string, buildCommand string, outputFolder string) (*int, error) {
 	var projectId int
-	query := "INSERT INTO \"deploy-io\".projects (user_id, name, github_id, build_command, output_folder) VALUES($1, $2, $3, $4, $5) RETURNING id"
-	err := config.DataBase.QueryRow(query, userId, name, githubId, buildCommand, outputFolder).Scan(&projectId)
+	query := "INSERT INTO \"deploy-io\".projects (user_id, name, github_id, install_command, build_command, output_folder) VALUES($1, $2, $3, $4, $5, $6) RETURNING id"
+	err := config.DataBase.QueryRow(query, userId, name, githubId, installCommand, buildCommand, outputFolder).Scan(&projectId)
 	if err != nil {
 		return nil, err
 	}
@@ -275,17 +279,18 @@ func insertProjectIntoDB(userId int, name string, githubId int, buildCommand str
 	return &projectId, nil
 }
 
-func getDefaultBuildCommandAndOpFolder() (string, string) {
+func getDefaults() (string, string, string) {
 	var buildCommand, outputFolder string
 
+	installCommand, installCommandExists := os.LookupEnv("INSTALL_COMMAND")
 	buildCommand, buildCommandExists := os.LookupEnv("BUILD_COMMAND")
 	outputFolder, outputFolderExists := os.LookupEnv("BUILD_DIRECTORY")
 
-	if !buildCommandExists || !outputFolderExists {
-		return "npm run build", "./dist"
+	if !buildCommandExists || !outputFolderExists || !installCommandExists {
+		return "npm install", "npm run build", "./dist"
 	}
 
-	return buildCommand, outputFolder
+	return installCommand, buildCommand, outputFolder
 }
 
 func encrypt(text string) (string, error) {

@@ -51,7 +51,7 @@ func (b BuildHandler) CreateBuild(w http.ResponseWriter, r *http.Request) {
 	}
 
 	buildId, buildInsertErr := insertIntoDB(requestBody.ProjectId, commitSha)
-	if buildInsertErr != nil {
+	if buildInsertErr != nil || buildId == nil {
 		utils.HandleError(utils.ErrInvalid, buildInsertErr, w, nil)
 		return
 	}
