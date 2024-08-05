@@ -1,12 +1,19 @@
 package main
 
 import (
+	"buildServer/config"
+	"buildServer/utils"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
+	"strings"
+	"time"
+
+	auth "buildServer/auth"
 
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -14,6 +21,8 @@ import (
 
 func init() {
 	initGoDotENV()
+	createTmpDir()
+	config.InitDBConnection()
 }
 
 func main() {
@@ -57,8 +66,50 @@ func main() {
 
 	go func() {
 		for d := range msgs {
-			log.Printf("Received a job")
+			var request Request
+
+			deconstructorErr := json.Unmarshal(d.Body, &request)
+			if deconstructorErr != nil {
+				failOnError(deconstructorErr, "[SERVER] erred while deconstructing request from client")
+			}
 			d.Ack(true)
+
+			log.Printf("Received a job %d", request.BuildId)
+			userId, _, githubId, err := getUserIdAndProjectId(request.BuildId)
+			if err != nil {
+				log.Print(err.Error())
+			}
+
+			archiveURL, archiveErr := getArchiveURL(*githubId, *userId)
+			if archiveErr != nil {
+				failOnError(archiveErr, "[SERVER] erred while getting archieve url")
+			}
+
+			// replace `{archive_format}` with `tarball`
+			archiveURL = strings.ReplaceAll(archiveURL, "{archive_format}", "tarball")
+
+			// remove "{/ref}"
+			archiveURL = strings.ReplaceAll(archiveURL, "{/ref}", "")
+
+			workingDir, cloneErr := CloneAndExtractRepository(archiveURL, *userId, request.BuildId)
+			if cloneErr != nil {
+				failOnError(cloneErr, "[SERVER] failed to clone and extract repo")
+			}
+
+			installCommand, buildCommand, getInstallCmdErr := getInstallAndBuildCommand(request.BuildId)
+			if getInstallCmdErr != nil {
+				failOnError(getInstallCmdErr, "[SERVER] failed to get installation or build command")
+			}
+
+			installErr := InstallDependencies(installCommand, getCurDir()+"/tmp/"+workingDir)
+			if installErr != nil {
+				failOnError(installErr, "[SERVER] failed to install dependencies")
+			}
+
+			builderr := BuildProject(buildCommand)
+			if builderr != nil {
+				failOnError(builderr, "[SERVER] failed to build project")
+			}
 		}
 	}()
 
@@ -67,45 +118,136 @@ func main() {
 
 }
 
-func CloneAndExtractRepository() {
-	client := &http.Client{}
+func BuildProject(buildCommand string) error {
 
-	req, err := http.NewRequest("GET", "https://api.github.com/repos/RajendranDinesh/aerys/tarball", nil)
+	return nil
+}
+
+func InstallDependencies(installCommand string, dir string) error {
+	command := strings.Fields(installCommand)
+
+	cmdName := command[0]
+	cmdArgs := command[1:]
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
+	cmd.Dir = dir
+
+	_, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalln(err)
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("[INSTALL] took so long")
+		}
+		return err
 	}
 
-	req.Header.Set("Authorization", "Bearer ")
+	return nil
+}
 
-	resp, err := client.Do(req)
+func getArchiveURL(githubId int, userId int) (string, error) {
+	accessToken, accessTokenErr := auth.GetAccessToken(userId)
+	if accessTokenErr != nil {
+		return "", accessTokenErr
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	}
+
+	repoResp, repoErr := utils.Request("GET", fmt.Sprintf("https://api.github.com/repositories/%d", githubId), &headers, nil, nil)
+	if repoErr != nil {
+		return "", repoErr
+	}
+
+	defer repoResp.Body.Close()
+
+	repoBody, repoReadErr := io.ReadAll(repoResp.Body)
+	if repoReadErr != nil {
+		return "", repoErr
+	}
+
+	var repoResponse RepoResponse
+
+	deconstructorErr := json.Unmarshal(repoBody, &repoResponse)
+	if deconstructorErr != nil {
+		return "", deconstructorErr
+	}
+
+	return repoResponse.ArchiveURL, nil
+}
+
+func getInstallAndBuildCommand(buildId int) (string, string, error) {
+	var installCommand, buildCommand string
+
+	retQuery := `SELECT p.install_command, p.build_command FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
+	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&installCommand, &buildCommand)
+	if queryErr != nil {
+		return "", "", queryErr
+	}
+
+	return installCommand, buildCommand, nil
+}
+
+func getUserIdAndProjectId(buildId int) (*int, *int, *int, error) {
+	var userId, projectId, githubId int
+
+	retQuery := `SELECT p.user_id, p.id, p.github_id FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
+	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&userId, &projectId, &githubId)
+	if queryErr != nil {
+		return nil, nil, nil, queryErr
+	}
+
+	return &userId, &projectId, &githubId, nil
+}
+
+func CloneAndExtractRepository(archiveURL string, userId int, buildId int) (string, error) {
+	accessToken, accessTokenErr := auth.GetAccessToken(userId)
+	if accessTokenErr != nil {
+		return "", accessTokenErr
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + accessToken,
+	}
+
+	resp, err := utils.Request("GET", archiveURL, &headers, nil, nil)
 	if err != nil {
-		print("erred")
-		log.Fatalln(err)
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
-	file, err := os.Create("a.tar")
+	file, err := os.Create(fmt.Sprintf("%s%d.tar", getCurDir()+"/tmp/", buildId))
 	if err != nil {
-		print("erred")
-		log.Fatalln(err)
-	}
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		print("erred")
-		log.Fatalln(err)
+		return "", err
 	}
 
 	defer file.Close()
 
-	cmd := exec.Command("tar", "-xvzf", "a.tar")
-
-	_, err = cmd.Output()
+	_, err = io.Copy(file, resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		return "", err
 	}
 
+	cmd := exec.Command("tar", "-xvzf", file.Name(), "-C", getCurDir()+"/tmp")
+
+	extractionOutput, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	files := strings.Split(string(extractionOutput), "\n")
+
+	directoryName := files[0]
+
+	removeErr := os.Remove(file.Name())
+	if removeErr != nil {
+		return "", removeErr
+	}
+
+	return directoryName, nil
 }
 
 func failOnError(err error, msg string) {
@@ -133,4 +275,30 @@ func initGoDotENV() {
 	if err != nil {
 		log.Fatalln("[SERVER] Error Loading .env file")
 	}
+}
+
+func getCurDir() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Println("Error getting current directory:", err)
+		return "./"
+	}
+
+	return cwd
+}
+
+func createTmpDir() error {
+	cwd := getCurDir()
+	tmpDir := cwd + "/tmp"
+
+	if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
+		if err := os.Mkdir(tmpDir, 0755); err != nil {
+			return fmt.Errorf("error creating directory: %v", err)
+		}
+		fmt.Println("Directory 'tmp' created.")
+	} else {
+		fmt.Println("Directory 'tmp' already exists.")
+	}
+
+	return nil
 }
