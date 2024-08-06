@@ -1,8 +1,11 @@
 package main
 
 import (
+	auth "buildServer/auth"
 	"buildServer/config"
+	"buildServer/upload"
 	"buildServer/utils"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,16 +16,15 @@ import (
 	"strings"
 	"time"
 
-	auth "buildServer/auth"
-
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 func init() {
 	initGoDotENV()
-	createTmpDir()
+	utils.CreateTmpDir()
 	config.InitDBConnection()
+	config.InitMinioConnection()
 }
 
 func main() {
@@ -96,19 +98,28 @@ func main() {
 				failOnError(cloneErr, "[SERVER] failed to clone and extract repo")
 			}
 
-			installCommand, buildCommand, getInstallCmdErr := getInstallAndBuildCommand(request.BuildId)
+			installCommand, buildCommand, outputFolder, getInstallCmdErr := getInstallAndBuildCommand(request.BuildId)
 			if getInstallCmdErr != nil {
 				failOnError(getInstallCmdErr, "[SERVER] failed to get installation or build command")
 			}
 
-			installErr := InstallDependencies(installCommand, getCurDir()+"/tmp/"+workingDir)
+			installErr := InstallDependencies(installCommand, utils.GetCurDir()+"/tmp/"+workingDir)
 			if installErr != nil {
 				failOnError(installErr, "[SERVER] failed to install dependencies")
 			}
 
-			builderr := BuildProject(*projectId, buildCommand, getCurDir()+"/tmp/"+workingDir)
+			builderr := BuildProject(*projectId, buildCommand, utils.GetCurDir()+"/tmp/"+workingDir, outputFolder)
 			if builderr != nil {
-				failOnError(builderr, "[SERVER] failed to build project")
+				if strings.Contains(builderr.Error(), "Specified output folder") {
+					return
+				} else {
+					failOnError(builderr, "[SERVER] failed to build project")
+				}
+			}
+
+			uploadErr := upload.UploadProjectFiles(request.BuildId, *userId, workingDir)
+			if uploadErr != nil {
+				failOnError(uploadErr, "[UPLOAD] failed to upload stuff")
 			}
 		}
 	}()
@@ -118,7 +129,7 @@ func main() {
 
 }
 
-func BuildProject(projectId int, buildCommand string, dir string) error {
+func BuildProject(projectId int, buildCommand, dir, outputFolder string) error {
 	command := strings.Fields(buildCommand)
 
 	cmdName := command[0]
@@ -154,6 +165,11 @@ func BuildProject(projectId int, buildCommand string, dir string) error {
 		}
 		println("[BUILD] " + string(op))
 		return err
+	}
+
+	// check if output folder exists else raise error
+	if !utils.FolderExists(dir + outputFolder) {
+		return fmt.Errorf("[BUILD] Specified output folder %s was not found after build", outputFolder)
 	}
 
 	return nil
@@ -240,16 +256,16 @@ func getArchiveURL(githubId int, userId int) (string, error) {
 	return repoResponse.ArchiveURL, nil
 }
 
-func getInstallAndBuildCommand(buildId int) (string, string, error) {
-	var installCommand, buildCommand string
+func getInstallAndBuildCommand(buildId int) (string, string, string, error) {
+	var installCommand, buildCommand, outputFolder string
 
-	retQuery := `SELECT p.install_command, p.build_command FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
-	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&installCommand, &buildCommand)
+	retQuery := `SELECT p.install_command, p.build_command, p.output_folder FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
+	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&installCommand, &buildCommand, &outputFolder)
 	if queryErr != nil {
-		return "", "", queryErr
+		return "", "", "", queryErr
 	}
 
-	return installCommand, buildCommand, nil
+	return installCommand, buildCommand, outputFolder, nil
 }
 
 func getUserIdAndProjectId(buildId int) (*int, *int, *int, error) {
@@ -281,7 +297,7 @@ func CloneAndExtractRepository(archiveURL string, userId int, buildId int) (stri
 
 	defer resp.Body.Close()
 
-	file, err := os.Create(fmt.Sprintf("%s%d.tar", getCurDir()+"/tmp/", buildId))
+	file, err := os.Create(fmt.Sprintf("%s%d.tar", utils.GetCurDir()+"/tmp/", buildId))
 	if err != nil {
 		return "", err
 	}
@@ -293,7 +309,7 @@ func CloneAndExtractRepository(archiveURL string, userId int, buildId int) (stri
 		return "", err
 	}
 
-	cmd := exec.Command("tar", "-xvzf", file.Name(), "-C", getCurDir()+"/tmp")
+	cmd := exec.Command("tar", "-xvzf", file.Name(), "-C", utils.GetCurDir()+"/tmp")
 
 	extractionOutput, err := cmd.Output()
 	if err != nil {
@@ -337,32 +353,6 @@ func initGoDotENV() {
 	if err != nil {
 		log.Fatalln("[SERVER] Error Loading .env file")
 	}
-}
-
-func getCurDir() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Println("Error getting current directory:", err)
-		return "./"
-	}
-
-	return cwd
-}
-
-func createTmpDir() error {
-	cwd := getCurDir()
-	tmpDir := cwd + "/tmp"
-
-	if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
-		if err := os.Mkdir(tmpDir, 0755); err != nil {
-			return fmt.Errorf("error creating directory: %v", err)
-		}
-		fmt.Println("Directory 'tmp' created.")
-	} else {
-		fmt.Println("Directory 'tmp' already exists.")
-	}
-
-	return nil
 }
 
 func loadNvmEnv() ([]string, error) {

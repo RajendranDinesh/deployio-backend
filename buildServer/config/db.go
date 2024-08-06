@@ -40,5 +40,5 @@ func InitDBConnection() {
 		log.Fatalln("[DATABASE] Could not ping the db.")
 	}
 
-	fmt.Printf("[DATABASE] Connected to %s\n", databaseName)
+	log.Printf("[DATABASE] Connected to %s\n", databaseName)
 }
