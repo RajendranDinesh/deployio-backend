@@ -27,6 +27,8 @@ func main() {
 
 	config.InitDBConnection()
 
+	config.InitRabbitConnection()
+
 	fmt.Printf("[SERVER] Exposed On %[1]s:%[2]s\n", ipAddress, port)
 
 	// graceful shutdown implementation
@@ -67,6 +69,8 @@ func main() {
 		log.Fatalln("[SERVER] ", err)
 	}
 
+	defer config.RabbitConnection.Close()
+	defer config.RabbitChannel.Close()
 	<-serverCtx.Done()
 }
 

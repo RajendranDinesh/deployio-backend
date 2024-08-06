@@ -1,14 +1,19 @@
 package build
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"httpServer/config"
 	auth "httpServer/src/routes/Auth"
 	"httpServer/utils"
 	"io"
+	"log"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/rabbitmq/amqp091-go"
 )
 
 func (b BuildHandler) CreateBuild(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +71,21 @@ func (b BuildHandler) CreateBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	buildCtx := context.Background()
+
+	queueErr := config.RabbitChannel.PublishWithContext(buildCtx, "", config.RabbitQueue.Name, false, false, amqp091.Publishing{
+		ContentType: "application/octet-stream",
+		Body:        []byte(responseBody),
+	})
+	if queueErr != nil {
+		UpdateBuildLog(*buildId, queueErr.Error())
+		SetBuildStatus(*buildId, "failure")
+		utils.HandleError(utils.ErrInternal, queueErr, w, nil)
+		return
+	}
+
+	log.Printf("[rabbitMQ] send %s", responseBody)
+
 	w.Write(responseBody)
 }
 
@@ -73,7 +93,7 @@ func insertIntoDB(projectId int, commitSha string) (*int, error) {
 	var buildId int
 
 	insertQuery := `
-		INSERT INTO "deploy-io".builds(project_id, build_status, triggered_by, commit_hash)
+		INSERT INTO "deploy-io".builds(project_id, status, triggered_by, commit_hash)
 		VALUES($1, 'in queue', 'manual', $2) RETURNING id
 	`
 	insertErr := config.DataBase.QueryRow(insertQuery, projectId, commitSha).Scan(&buildId)
@@ -132,7 +152,7 @@ func getCommitSha(githubId int, userId int) (string, error) {
 		return "", fmt.Errorf("[BUILD] Could not get commits url")
 	}
 
-	commitsURL = strings.Replace(repoAPIResponse.CommitsURL, "{/sha}", "", -1)
+	commitsURL = strings.ReplaceAll(repoAPIResponse.CommitsURL, "{/sha}", "")
 
 	shaResponse, shaErr := utils.Request("GET", commitsURL, &header, nil, nil)
 	if shaErr != nil {
@@ -182,7 +202,7 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 
 	var listBuilds []Build
 
-	listBuildQuery := `SELECT id, build_status, triggered_by, commit_hash, build_logs, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.project_id = $1`
+	listBuildQuery := `SELECT id, status, triggered_by, commit_hash, logs, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.project_id = $1`
 	builds, rowsErr := config.DataBase.Query(listBuildQuery, listBuildsBody.ProjectId)
 	if rowsErr != nil {
 		utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
@@ -231,7 +251,7 @@ func (b BuildHandler) Build(w http.ResponseWriter, r *http.Request) {
 
 	var build Build
 
-	buildQuery := `SELECT id, build_status, triggered_by, commit_hash, build_logs, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.id = $1`
+	buildQuery := `SELECT id, status, triggered_by, commit_hash, logs, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.id = $1`
 	rowsErr := config.DataBase.QueryRow(buildQuery, buildBody.BuildId).Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Build_logs, &build.Start_time, &build.End_time, &build.Created_at, &build.Updated_at)
 	if rowsErr != nil {
 		utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
@@ -245,4 +265,24 @@ func (b BuildHandler) Build(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(responseBody)
+}
+
+func UpdateBuildLog(buildId int, log string) error {
+	query := `UPDATE "deploy-io".builds SET logs = COALESCE(logs || E'\n', '') || '$1', end_time = $2 WHERE id = $3`
+	_, queErr := config.DataBase.Exec(query, log, time.Now(), buildId)
+	if queErr != nil {
+		return queErr
+	}
+
+	return nil
+}
+
+func SetBuildStatus(buildId int, status string) error {
+	query := `UPDATE "deploy-io".builds SET status = '$1' WHERE id = $2`
+	_, queErr := config.DataBase.Exec(query, status, buildId)
+	if queErr != nil {
+		return queErr
+	}
+
+	return nil
 }
