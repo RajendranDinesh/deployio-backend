@@ -75,7 +75,7 @@ func main() {
 			d.Ack(true)
 
 			log.Printf("Received a job %d", request.BuildId)
-			userId, _, githubId, err := getUserIdAndProjectId(request.BuildId)
+			userId, projectId, githubId, err := getUserIdAndProjectId(request.BuildId)
 			if err != nil {
 				log.Print(err.Error())
 			}
@@ -106,7 +106,7 @@ func main() {
 				failOnError(installErr, "[SERVER] failed to install dependencies")
 			}
 
-			builderr := BuildProject(buildCommand)
+			builderr := BuildProject(*projectId, buildCommand, getCurDir()+"/tmp/"+workingDir)
 			if builderr != nil {
 				failOnError(builderr, "[SERVER] failed to build project")
 			}
@@ -118,9 +118,71 @@ func main() {
 
 }
 
-func BuildProject(buildCommand string) error {
+func BuildProject(projectId int, buildCommand string, dir string) error {
+	command := strings.Fields(buildCommand)
+
+	cmdName := command[0]
+	cmdArgs := command[1:]
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
+	cmd.Dir = dir
+
+	environments, envErr := getEnvironmentVariables(projectId)
+	if envErr != nil {
+		return envErr
+	}
+
+	nvmEnv, err := loadNvmEnv()
+	if err != nil {
+		return fmt.Errorf("error loading nvm environment: %v", err)
+	}
+
+	env := os.Environ()
+
+	env = append(env, nvmEnv...)
+	env = append(env, environments...)
+
+	cmd.Env = env
+
+	op, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("[INSTALL] took so long")
+		}
+		println("[BUILD] " + string(op))
+		return err
+	}
 
 	return nil
+}
+
+func getEnvironmentVariables(projectId int) ([]string, error) {
+	query := `SELECT key, value FROM "deploy-io".environments WHERE project_id = $1`
+
+	envs, dbErr := config.DataBase.Query(query, projectId)
+	if dbErr != nil {
+		return nil, dbErr
+	}
+
+	var environments []string
+
+	for envs.Next() {
+		var key, encValue string
+
+		envs.Scan(&key, &encValue)
+
+		value, decError := auth.Decrypt(encValue)
+		if decError != nil {
+			return nil, decError
+		}
+
+		environments = append(environments, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	return environments, nil
 }
 
 func InstallDependencies(installCommand string, dir string) error {
@@ -301,4 +363,14 @@ func createTmpDir() error {
 	}
 
 	return nil
+}
+
+func loadNvmEnv() ([]string, error) {
+	cmd := exec.Command("bash", "-c", "source ~/.nvm/nvm.sh && env")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("error loading nvm environment: %v", err)
+	}
+	env := strings.Split(string(output), "\n")
+	return env, nil
 }
