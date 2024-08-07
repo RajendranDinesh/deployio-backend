@@ -59,8 +59,7 @@ func BuildProject(projectId, buildId int, buildCommand, dir, outputFolder string
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("[INSTALL] took so long")
 		}
-		println("[BUILD] \n" + string(op))
-		return err
+		return fmt.Errorf("[BUILD]\n" + string(op))
 	}
 
 	// check if output folder exists else raise error

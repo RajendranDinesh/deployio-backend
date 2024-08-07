@@ -14,10 +14,9 @@ import (
 )
 
 func UploadProjectFiles(buildId int, userId int, workingDir string) error {
-	var outputFolder string
-	var projectName string
-	query := `SELECT p.name, p.output_folder FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE p.user_id = $1 AND b.id = $2`
-	queryErr := config.DataBase.QueryRow(query, userId, buildId).Scan(&projectName, &outputFolder)
+	var outputFolder, projectName, directory string
+	query := `SELECT p.name, p.output_folder, p.directory FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE p.user_id = $1 AND b.id = $2`
+	queryErr := config.DataBase.QueryRow(query, userId, buildId).Scan(&projectName, &outputFolder, &directory)
 	if queryErr != nil {
 		log.Fatalln("[UPLOAD] " + queryErr.Error())
 	}
@@ -27,7 +26,12 @@ func UploadProjectFiles(buildId int, userId int, workingDir string) error {
 		return proDelErr
 	}
 
-	srcFolder := getCurDir() + "/tmp/" + workingDir + outputFolder
+	var srcFolder string
+	if directory != "./" {
+		srcFolder = getCurDir() + "/tmp/" + workingDir + directory + outputFolder
+	} else {
+		srcFolder = getCurDir() + "/tmp/" + workingDir + outputFolder
+	}
 
 	files, getFileErr := getFilePaths(srcFolder)
 	if getFileErr != nil {
@@ -120,14 +124,14 @@ func getCurDir() string {
 	return cwd
 }
 
-func deleteExistingFiles(projectId string) error {
+func deleteExistingFiles(projectName string) error {
 	bucketName, bucketExists := os.LookupEnv("MIO_BUCKET")
 	if !bucketExists {
 		return fmt.Errorf("[UPLOAD] bucket name was not set in env variable")
 	}
 
 	var objects []minio.ObjectInfo
-	for object := range config.Minio.ListObjects(context.Background(), bucketName, minio.ListObjectsOptions{Prefix: projectId, Recursive: true}) {
+	for object := range config.Minio.ListObjects(context.Background(), bucketName, minio.ListObjectsOptions{Prefix: projectName, Recursive: true}) {
 		if object.Err != nil {
 			return object.Err
 		}

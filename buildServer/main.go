@@ -76,7 +76,7 @@ func main() {
 				utils.UpdateBuildLog(request.BuildId, deconstructorErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[JSON] erred while deconstructing request from client")
-				return
+				continue
 			}
 
 			// set ack to true otherwise rabbitmq would redistribute the request to other workers, since the build would take some time
@@ -88,7 +88,7 @@ func main() {
 				utils.UpdateBuildLog(request.BuildId, err.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[GETu&pId] " + err.Error())
-				return
+				continue
 			}
 
 			query := `UPDATE "deploy-io".builds SET start_time = $1, status = 'running' WHERE id = $2`
@@ -102,7 +102,7 @@ func main() {
 				utils.UpdateBuildLog(request.BuildId, archiveErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[GETarcURL] erred while getting archieve url " + archiveErr.Error())
-				return
+				continue
 			}
 
 			// replace `{archive_format}` with `tarball`
@@ -116,31 +116,37 @@ func main() {
 				utils.UpdateBuildLog(request.BuildId, cloneErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[CLONE&EXT] failed to clone and extract repo " + cloneErr.Error())
-				return
+				continue
 			}
 
-			installCommand, buildCommand, outputFolder, getInstallCmdErr := getInstallAndBuildCommand(request.BuildId)
+			directory, installCommand, buildCommand, outputFolder, getInstallCmdErr := getInstallAndBuildCommand(request.BuildId)
 			if getInstallCmdErr != nil {
 				utils.UpdateBuildLog(request.BuildId, getInstallCmdErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[GETi&bCMD] failed to get install or build command " + getInstallCmdErr.Error())
-				return
+				continue
 			}
 
-			installErr := InstallDependencies(request.BuildId, installCommand, utils.GetCurDir()+"/tmp/"+workingDir)
+			projectDir := utils.GetCurDir() + "/tmp/" + workingDir
+
+			if directory != "./" {
+				projectDir = projectDir + directory
+			}
+
+			installErr := InstallDependencies(request.BuildId, installCommand, projectDir)
 			if installErr != nil {
 				utils.UpdateBuildLog(request.BuildId, installErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[SERVER] failed to install dependencies " + installErr.Error())
-				return
+				continue
 			}
 
-			builderr := build.BuildProject(*projectId, request.BuildId, buildCommand, utils.GetCurDir()+"/tmp/"+workingDir, outputFolder)
+			builderr := build.BuildProject(*projectId, request.BuildId, buildCommand, projectDir, outputFolder)
 			if builderr != nil {
 				utils.UpdateBuildLog(request.BuildId, builderr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[SERVER] failed to build project " + builderr.Error())
-				return
+				continue
 			}
 
 			uploadErr := upload.UploadProjectFiles(request.BuildId, *userId, workingDir)
@@ -148,7 +154,25 @@ func main() {
 				utils.UpdateBuildLog(request.BuildId, uploadErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[UPLOAD] failed to upload stuff " + uploadErr.Error())
-				return
+				continue
+			}
+
+			setFalseQuery := `UPDATE "deploy-io".deployments SET status = false WHERE project_id = $1`
+			_, setFalseErr := config.DataBase.Exec(setFalseQuery, projectId)
+			if setFalseErr != nil {
+				utils.UpdateBuildLog(request.BuildId, setFalseErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[UPDATE] failed to update existing status to false " + setFalseErr.Error())
+				continue
+			}
+
+			insQuery := `INSERT INTO "deploy-io".deployments (project_id, build_id) VALUES ($1, $2)`
+			_, insErr := config.DataBase.Exec(insQuery, projectId, request.BuildId)
+			if insErr != nil {
+				utils.UpdateBuildLog(request.BuildId, insErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[INSERT] failed to insert new build into deployments " + insErr.Error())
+				continue
 			}
 		}
 	}()
@@ -185,7 +209,7 @@ func InstallDependencies(buildId int, installCommand, dir string) error {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("[INSTALL] took so long")
 		}
-		return err
+		return fmt.Errorf("[INSTALL | OP] " + string(output) + "[ERROR]" + err.Error())
 	}
 
 	updateErr = utils.UpdateBuildLog(buildId, string(output))
@@ -228,21 +252,21 @@ func getArchiveURL(githubId int, userId int) (string, error) {
 	return repoResponse.ArchiveURL, nil
 }
 
-func getInstallAndBuildCommand(buildId int) (string, string, string, error) {
-	var installCommand, buildCommand, outputFolder string
+func getInstallAndBuildCommand(buildId int) (string, string, string, string, error) {
+	var installCommand, buildCommand, outputFolder, directory string
 
-	retQuery := `SELECT p.install_command, p.build_command, p.output_folder FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
-	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&installCommand, &buildCommand, &outputFolder)
+	retQuery := `SELECT p.directory, p.install_command, p.build_command, p.output_folder FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
+	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&directory, &installCommand, &buildCommand, &outputFolder)
 	if queryErr != nil {
-		return "", "", "", queryErr
+		return "", "", "", "", queryErr
 	}
 
 	updateErr := utils.UpdateBuildLog(buildId, "[CMD] got installation ("+installCommand+") and build ("+buildCommand+") commands")
 	if updateErr != nil {
-		return "", "", "", nil
+		return "", "", "", "", nil
 	}
 
-	return installCommand, buildCommand, outputFolder, nil
+	return directory, installCommand, buildCommand, outputFolder, nil
 }
 
 func getUserIdAndProjectId(buildId int) (*int, *int, *int, error) {
