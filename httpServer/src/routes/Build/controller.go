@@ -202,7 +202,7 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 
 	var listBuilds []Build
 
-	listBuildQuery := `SELECT id, status, triggered_by, commit_hash, logs, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.project_id = $1`
+	listBuildQuery := `SELECT id, status, triggered_by, commit_hash, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.project_id = $1`
 	builds, rowsErr := config.DataBase.Query(listBuildQuery, listBuildsBody.ProjectId)
 	if rowsErr != nil {
 		utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
@@ -211,7 +211,7 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 
 	for builds.Next() {
 		var build Build
-		builds.Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Build_logs, &build.Start_time, &build.End_time, &build.Created_at, &build.Updated_at)
+		builds.Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Start_time, &build.End_time, &build.Created_at, &build.Updated_at)
 
 		listBuilds = append(listBuilds, build)
 	}

@@ -27,7 +27,7 @@ type Build struct {
 	Build_status string     `json:"build_status"`
 	Triggered_by string     `json:"triggered_by"`
 	Commit_hash  string     `json:"commit_hash"`
-	Build_logs   *string    `json:"build_logs"`
+	Build_logs   *string    `json:"build_logs,omitempty"`
 	Start_time   *time.Time `json:"start_time"`
 	End_time     *time.Time `json:"end_time"`
 	Created_at   time.Time  `json:"created_at"`

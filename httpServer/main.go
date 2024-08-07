@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -26,10 +25,10 @@ func main() {
 	port := getPortNumber()
 
 	config.InitDBConnection()
-
 	config.InitRabbitConnection()
+	config.InitMinioConnection()
 
-	fmt.Printf("[SERVER] Exposed On %[1]s:%[2]s\n", ipAddress, port)
+	log.Printf("[SERVER] Exposed On %[1]s:%[2]s\n", ipAddress, port)
 
 	// graceful shutdown implementation
 

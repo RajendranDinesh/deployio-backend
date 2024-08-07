@@ -36,7 +36,7 @@ func InitRabbitConnection() {
 		log.Fatalln("[rabbitMQ] failed to declare a queue " + err.Error())
 	}
 
-	println("[rabbitMQ] Connection Established")
+	log.Println("[rabbitMQ] Connection Established")
 }
 
 func getRabbitMQConnectionString() string {
