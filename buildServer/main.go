@@ -2,6 +2,7 @@ package main
 
 import (
 	auth "buildServer/auth"
+	build "buildServer/build"
 	"buildServer/config"
 	"buildServer/upload"
 	"buildServer/utils"
@@ -29,11 +30,11 @@ func init() {
 
 func main() {
 	conn, err := amqp.Dial(getRabbitMQConnectionString())
-	failOnError(err, "[SERVER] failed to connect rabbitMQ")
+	failOnError(err, "[rabbitMQ] failed to connect")
 	defer conn.Close()
 
 	ch, err := conn.Channel()
-	failOnError(err, "[SERVER] failed to open a channel")
+	failOnError(err, "[rabbitMQ] failed to open a channel")
 	defer ch.Close()
 
 	q, err := ch.QueueDeclare(
@@ -44,14 +45,14 @@ func main() {
 		false, // no-wait
 		nil,   // arguments
 	)
-	failOnError(err, "[SERVER] failed to declare a queue")
+	failOnError(err, "[rabbitMQ] failed to declare a queue")
 
 	err = ch.Qos(
 		1,
 		0,
 		false,
 	)
-	failOnError(err, "[SERVER] failed to set QOS")
+	failOnError(err, "[rabbitMQ] failed to set QOS")
 
 	msgs, err := ch.Consume(
 		q.Name,
@@ -62,7 +63,7 @@ func main() {
 		false, // no-wait
 		nil,   // args
 	)
-	failOnError(err, "[SERVER] failed to register a worker")
+	failOnError(err, "[rabbitMQ] failed to register a worker")
 
 	forever := make(chan int)
 
@@ -72,19 +73,36 @@ func main() {
 
 			deconstructorErr := json.Unmarshal(d.Body, &request)
 			if deconstructorErr != nil {
-				failOnError(deconstructorErr, "[SERVER] erred while deconstructing request from client")
+				utils.UpdateBuildLog(request.BuildId, deconstructorErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[JSON] erred while deconstructing request from client")
+				return
 			}
+
+			// set ack to true otherwise rabbitmq would redistribute the request to other workers, since the build would take some time
 			d.Ack(true)
 
-			log.Printf("Received a job %d", request.BuildId)
+			log.Printf("[BUILD] Received job with build id %d", request.BuildId)
 			userId, projectId, githubId, err := getUserIdAndProjectId(request.BuildId)
 			if err != nil {
-				log.Print(err.Error())
+				utils.UpdateBuildLog(request.BuildId, err.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[GETu&pId] " + err.Error())
+				return
+			}
+
+			query := `UPDATE "deploy-io".builds SET start_time = $1, status = 'running' WHERE id = $2`
+			_, qErr := config.DataBase.Exec(query, time.Now(), request.BuildId)
+			if qErr != nil {
+				log.Fatalln("[DATABASE] " + qErr.Error())
 			}
 
 			archiveURL, archiveErr := getArchiveURL(*githubId, *userId)
 			if archiveErr != nil {
-				failOnError(archiveErr, "[SERVER] erred while getting archieve url")
+				utils.UpdateBuildLog(request.BuildId, archiveErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[GETarcURL] erred while getting archieve url " + archiveErr.Error())
+				return
 			}
 
 			// replace `{archive_format}` with `tarball`
@@ -95,113 +113,51 @@ func main() {
 
 			workingDir, cloneErr := CloneAndExtractRepository(archiveURL, *userId, request.BuildId)
 			if cloneErr != nil {
-				failOnError(cloneErr, "[SERVER] failed to clone and extract repo")
+				utils.UpdateBuildLog(request.BuildId, cloneErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[CLONE&EXT] failed to clone and extract repo " + cloneErr.Error())
+				return
 			}
 
 			installCommand, buildCommand, outputFolder, getInstallCmdErr := getInstallAndBuildCommand(request.BuildId)
 			if getInstallCmdErr != nil {
-				failOnError(getInstallCmdErr, "[SERVER] failed to get installation or build command")
+				utils.UpdateBuildLog(request.BuildId, getInstallCmdErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[GETi&bCMD] failed to get install or build command " + getInstallCmdErr.Error())
+				return
 			}
 
-			installErr := InstallDependencies(installCommand, utils.GetCurDir()+"/tmp/"+workingDir)
+			installErr := InstallDependencies(request.BuildId, installCommand, utils.GetCurDir()+"/tmp/"+workingDir)
 			if installErr != nil {
-				failOnError(installErr, "[SERVER] failed to install dependencies")
+				utils.UpdateBuildLog(request.BuildId, installErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[SERVER] failed to install dependencies " + installErr.Error())
+				return
 			}
 
-			builderr := BuildProject(*projectId, buildCommand, utils.GetCurDir()+"/tmp/"+workingDir, outputFolder)
+			builderr := build.BuildProject(*projectId, request.BuildId, buildCommand, utils.GetCurDir()+"/tmp/"+workingDir, outputFolder)
 			if builderr != nil {
-				if strings.Contains(builderr.Error(), "Specified output folder") {
-					return
-				} else {
-					failOnError(builderr, "[SERVER] failed to build project")
-				}
+				utils.UpdateBuildLog(request.BuildId, builderr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[SERVER] failed to build project " + builderr.Error())
+				return
 			}
 
 			uploadErr := upload.UploadProjectFiles(request.BuildId, *userId, workingDir)
 			if uploadErr != nil {
-				failOnError(uploadErr, "[UPLOAD] failed to upload stuff")
+				utils.UpdateBuildLog(request.BuildId, uploadErr.Error())
+				utils.SetBuildStatus(request.BuildId, "failure")
+				log.Println("[UPLOAD] failed to upload stuff " + uploadErr.Error())
+				return
 			}
 		}
 	}()
 
-	log.Printf("[SERVER] waiting for build jobs..")
+	log.Printf("[SERVER] waiting for build jobs..\n")
 	<-forever
-
 }
 
-func BuildProject(projectId int, buildCommand, dir, outputFolder string) error {
-	command := strings.Fields(buildCommand)
-
-	cmdName := command[0]
-	cmdArgs := command[1:]
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
-	cmd.Dir = dir
-
-	environments, envErr := getEnvironmentVariables(projectId)
-	if envErr != nil {
-		return envErr
-	}
-
-	nvmEnv, err := loadNvmEnv()
-	if err != nil {
-		return fmt.Errorf("error loading nvm environment: %v", err)
-	}
-
-	env := os.Environ()
-
-	env = append(env, nvmEnv...)
-	env = append(env, environments...)
-
-	cmd.Env = env
-
-	op, err := cmd.CombinedOutput()
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("[INSTALL] took so long")
-		}
-		println("[BUILD] " + string(op))
-		return err
-	}
-
-	// check if output folder exists else raise error
-	if !utils.FolderExists(dir + outputFolder) {
-		return fmt.Errorf("[BUILD] Specified output folder %s was not found after build", outputFolder)
-	}
-
-	return nil
-}
-
-func getEnvironmentVariables(projectId int) ([]string, error) {
-	query := `SELECT key, value FROM "deploy-io".environments WHERE project_id = $1`
-
-	envs, dbErr := config.DataBase.Query(query, projectId)
-	if dbErr != nil {
-		return nil, dbErr
-	}
-
-	var environments []string
-
-	for envs.Next() {
-		var key, encValue string
-
-		envs.Scan(&key, &encValue)
-
-		value, decError := auth.Decrypt(encValue)
-		if decError != nil {
-			return nil, decError
-		}
-
-		environments = append(environments, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	return environments, nil
-}
-
-func InstallDependencies(installCommand string, dir string) error {
+func InstallDependencies(buildId int, installCommand, dir string) error {
 	command := strings.Fields(installCommand)
 
 	cmdName := command[0]
@@ -210,15 +166,31 @@ func InstallDependencies(installCommand string, dir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	if cmdName != "npm" {
+		return fmt.Errorf("[INSTALL] something other than npm was used")
+	}
+
 	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 	cmd.Dir = dir
 
-	_, err := cmd.CombinedOutput()
+	var updateErr error
+
+	updateErr = utils.UpdateBuildLog(buildId, "[INSTALL] Installing dependencies\n")
+	if updateErr != nil {
+		return updateErr
+	}
+
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("[INSTALL] took so long")
 		}
 		return err
+	}
+
+	updateErr = utils.UpdateBuildLog(buildId, string(output))
+	if updateErr != nil {
+		return updateErr
 	}
 
 	return nil
@@ -263,6 +235,11 @@ func getInstallAndBuildCommand(buildId int) (string, string, string, error) {
 	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&installCommand, &buildCommand, &outputFolder)
 	if queryErr != nil {
 		return "", "", "", queryErr
+	}
+
+	updateErr := utils.UpdateBuildLog(buildId, "[CMD] got installation ("+installCommand+") and build ("+buildCommand+") commands")
+	if updateErr != nil {
+		return "", "", "", nil
 	}
 
 	return installCommand, buildCommand, outputFolder, nil
@@ -325,6 +302,11 @@ func CloneAndExtractRepository(archiveURL string, userId int, buildId int) (stri
 		return "", removeErr
 	}
 
+	updateErr := utils.UpdateBuildLog(buildId, "[CLONE] Extracted repository and placed at "+directoryName)
+	if updateErr != nil {
+		return "", updateErr
+	}
+
 	return directoryName, nil
 }
 
@@ -353,14 +335,4 @@ func initGoDotENV() {
 	if err != nil {
 		log.Fatalln("[SERVER] Error Loading .env file")
 	}
-}
-
-func loadNvmEnv() ([]string, error) {
-	cmd := exec.Command("bash", "-c", "source ~/.nvm/nvm.sh && env")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("error loading nvm environment: %v", err)
-	}
-	env := strings.Split(string(output), "\n")
-	return env, nil
 }

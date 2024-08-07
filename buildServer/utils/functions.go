@@ -1,9 +1,11 @@
 package utils
 
 import (
+	"buildServer/config"
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 func FolderExists(folderPath string) bool {
@@ -43,6 +45,26 @@ func CreateTmpDir() error {
 		log.Println("[SERVER] Directory 'tmp' created.")
 	} else {
 		log.Println("[SERVER] Directory 'tmp' already exists.")
+	}
+
+	return nil
+}
+
+func UpdateBuildLog(buildId int, log string) error {
+	query := `UPDATE "deploy-io".builds SET logs = COALESCE(logs || E'\n', '') || $1, end_time = $2 WHERE id = $3`
+	_, queErr := config.DataBase.Exec(query, log, time.Now(), buildId)
+	if queErr != nil {
+		return queErr
+	}
+
+	return nil
+}
+
+func SetBuildStatus(buildId int, status string) error {
+	query := `UPDATE "deploy-io".builds SET status = $1::"deploy-io".build_status WHERE id = $2`
+	_, queErr := config.DataBase.Exec(query, status, buildId)
+	if queErr != nil {
+		return queErr
 	}
 
 	return nil

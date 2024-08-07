@@ -22,6 +22,11 @@ func UploadProjectFiles(buildId int, userId int, workingDir string) error {
 		log.Fatalln("[UPLOAD] " + queryErr.Error())
 	}
 
+	proDelErr := deleteExistingFiles(projectName)
+	if proDelErr != nil {
+		return proDelErr
+	}
+
 	srcFolder := getCurDir() + "/tmp/" + workingDir + outputFolder
 
 	files, getFileErr := getFilePaths(srcFolder)
@@ -33,7 +38,7 @@ func UploadProjectFiles(buildId int, userId int, workingDir string) error {
 		// Remove everything until dist/
 		index := strings.Index(file, outputFolder)
 		if index == -1 {
-			return fmt.Errorf("dist/ not found in path: %s", file)
+			return fmt.Errorf("%s not found in path: %s", outputFolder, file)
 		}
 
 		// Remove "dist/" and everything before it
@@ -51,12 +56,23 @@ func UploadProjectFiles(buildId int, userId int, workingDir string) error {
 		return delErr
 	}
 
+	statErr := utils.SetBuildStatus(buildId, "success")
+	if statErr != nil {
+		return statErr
+	}
+
+	buildErr := utils.UpdateBuildLog(buildId, "Completed")
+	if buildErr != nil {
+		return buildErr
+	}
+
+	log.Printf("[UPLOAD] Completed uploading assets of build with id %d\n", buildId)
+
 	return nil
 }
 
 func uploadFile(objectName string, filePath string) error {
 	bucketName, bucketExists := os.LookupEnv("MIO_BUCKET")
-
 	if !bucketExists {
 		return fmt.Errorf("[UPLOAD] bucket name was not set in env variable")
 	}
@@ -102,4 +118,42 @@ func getCurDir() string {
 	}
 
 	return cwd
+}
+
+func deleteExistingFiles(projectId string) error {
+	bucketName, bucketExists := os.LookupEnv("MIO_BUCKET")
+	if !bucketExists {
+		return fmt.Errorf("[UPLOAD] bucket name was not set in env variable")
+	}
+
+	var objects []minio.ObjectInfo
+	for object := range config.Minio.ListObjects(context.Background(), bucketName, minio.ListObjectsOptions{Prefix: projectId, Recursive: true}) {
+		if object.Err != nil {
+			return object.Err
+		}
+		objects = append(objects, object)
+	}
+
+	var err error
+	for _, object := range objects {
+		err = removeObject(object, bucketName)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func removeObject(object minio.ObjectInfo, bucketName string) error {
+	opts := minio.RemoveObjectOptions{
+		GovernanceBypass: true,
+	}
+
+	err := config.Minio.RemoveObject(context.Background(), bucketName, object.Key, opts)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
