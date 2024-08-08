@@ -119,12 +119,16 @@ func main() {
 				continue
 			}
 
-			directory, installCommand, buildCommand, outputFolder, getInstallCmdErr := getInstallAndBuildCommand(request.BuildId)
+			directory, installCommand, buildCommand, outputFolder, nodeVersion, getInstallCmdErr := getDefaults(request.BuildId)
 			if getInstallCmdErr != nil {
 				utils.UpdateBuildLog(request.BuildId, getInstallCmdErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
 				log.Println("[GETi&bCMD] failed to get install or build command " + getInstallCmdErr.Error())
 				continue
+			}
+
+			if outputFolder[0] != '/' {
+				outputFolder = "/" + outputFolder
 			}
 
 			projectDir := utils.GetCurDir() + "/tmp/" + workingDir
@@ -133,7 +137,7 @@ func main() {
 				projectDir = projectDir + directory
 			}
 
-			installErr := InstallDependencies(request.BuildId, installCommand, projectDir)
+			installErr := InstallDependencies(request.BuildId, nodeVersion, installCommand, projectDir)
 			if installErr != nil {
 				utils.UpdateBuildLog(request.BuildId, installErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
@@ -141,7 +145,7 @@ func main() {
 				continue
 			}
 
-			builderr := build.BuildProject(*projectId, request.BuildId, buildCommand, projectDir, outputFolder)
+			builderr := build.BuildProject(*projectId, request.BuildId, nodeVersion, buildCommand, projectDir, outputFolder)
 			if builderr != nil {
 				utils.UpdateBuildLog(request.BuildId, builderr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
@@ -181,7 +185,7 @@ func main() {
 	<-forever
 }
 
-func InstallDependencies(buildId int, installCommand, dir string) error {
+func InstallDependencies(buildId, nodeVersion int, installCommand, dir string) error {
 	command := strings.Fields(installCommand)
 
 	cmdName := command[0]
@@ -196,6 +200,17 @@ func InstallDependencies(buildId int, installCommand, dir string) error {
 
 	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 	cmd.Dir = dir
+
+	nvmEnv, err := utils.LoadNvmEnv(nodeVersion)
+	if err != nil {
+		return fmt.Errorf("error loading nvm environment: %v", err)
+	}
+
+	env := os.Environ()
+
+	env = append(env, nvmEnv...)
+
+	cmd.Env = env
 
 	var updateErr error
 
@@ -252,21 +267,22 @@ func getArchiveURL(githubId int, userId int) (string, error) {
 	return repoResponse.ArchiveURL, nil
 }
 
-func getInstallAndBuildCommand(buildId int) (string, string, string, string, error) {
+func getDefaults(buildId int) (string, string, string, string, int, error) {
 	var installCommand, buildCommand, outputFolder, directory string
+	var nodeVersion int
 
-	retQuery := `SELECT p.directory, p.install_command, p.build_command, p.output_folder FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
-	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&directory, &installCommand, &buildCommand, &outputFolder)
+	retQuery := `SELECT p.directory, p.install_command, p.build_command, p.output_folder, p.node_version FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
+	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&directory, &installCommand, &buildCommand, &outputFolder, &nodeVersion)
 	if queryErr != nil {
-		return "", "", "", "", queryErr
+		return "", "", "", "", 0, queryErr
 	}
 
 	updateErr := utils.UpdateBuildLog(buildId, "[CMD] got installation ("+installCommand+") and build ("+buildCommand+") commands")
 	if updateErr != nil {
-		return "", "", "", "", nil
+		return "", "", "", "", 0, nil
 	}
 
-	return directory, installCommand, buildCommand, outputFolder, nil
+	return directory, installCommand, buildCommand, outputFolder, nodeVersion, nil
 }
 
 func getUserIdAndProjectId(buildId int) (*int, *int, *int, error) {

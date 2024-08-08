@@ -1,0 +1,49 @@
+version: '3'
+services:
+  minio:
+    image: minio/minio
+    container_name: deploy-io_minio
+    command: server /data --console-address ":9001"
+
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+    environment:
+      MINIO_ROOT_USER: deploy-io
+      MINIO_ROOT_PASSWORD: deploy-io
+
+    volumes:
+      - minio-data:/data
+
+  postgres:
+    image: postgres
+    container_name: deploy-io_postgres
+
+    ports:
+      - "5432:5432"
+
+    environment:
+      POSTGRES_USER: deploy-io
+      POSTGRES_PASSWORD: deploy-io
+    
+    volumes:
+      - pg-data:/data
+  
+  rabbit:
+    image: rabbitmq
+    container_name: deploy-io_rabbit
+
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    
+    volumes:
+      - pg-data:/rabbit
+
+volumes:
+  pg-data:
+    driver: local
+
+  minio-data:
+    driver: local

@@ -28,6 +28,9 @@ func UploadProjectFiles(buildId int, userId int, workingDir string) error {
 
 	var srcFolder string
 	if directory != "./" {
+		if outputFolder[0] != '/' {
+			outputFolder = "/" + outputFolder
+		}
 		srcFolder = getCurDir() + "/tmp/" + workingDir + directory + outputFolder
 	} else {
 		srcFolder = getCurDir() + "/tmp/" + workingDir + outputFolder
@@ -39,13 +42,13 @@ func UploadProjectFiles(buildId int, userId int, workingDir string) error {
 	}
 
 	for _, file := range files {
-		// Remove everything until dist/
-		index := strings.Index(file, outputFolder)
+		// Find index of outputFolder
+		index := strings.Index(file, outputFolder+"/")
 		if index == -1 {
 			return fmt.Errorf("%s not found in path: %s", outputFolder, file)
 		}
 
-		// Remove "dist/" and everything before it
+		// Remove "outputFolder" and everything before it
 		relPath := file[index+len(outputFolder):]
 
 		destPath := filepath.Join(projectName, relPath)

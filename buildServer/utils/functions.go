@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -68,4 +70,14 @@ func SetBuildStatus(buildId int, status string) error {
 	}
 
 	return nil
+}
+
+func LoadNvmEnv(nodeVersion int) ([]string, error) {
+	cmd := exec.Command("bash", "-c", "source ~/.nvm/nvm.sh && nvm install "+fmt.Sprintf("%v", nodeVersion)+" && nvm use "+fmt.Sprintf("%v", nodeVersion)+" && env")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("error loading nvm environment: %v", err)
+	}
+	env := strings.Split(string(output), "\n")
+	return env, nil
 }

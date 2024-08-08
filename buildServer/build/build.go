@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func BuildProject(projectId, buildId int, buildCommand, dir, outputFolder string) error {
+func BuildProject(projectId, buildId, nodeVersion int, buildCommand, dir, outputFolder string) error {
 	command := strings.Fields(buildCommand)
 
 	cmdName := command[0]
@@ -35,7 +35,7 @@ func BuildProject(projectId, buildId int, buildCommand, dir, outputFolder string
 		return envErr
 	}
 
-	nvmEnv, err := loadNvmEnv()
+	nvmEnv, err := utils.LoadNvmEnv(nodeVersion)
 	if err != nil {
 		return fmt.Errorf("error loading nvm environment: %v", err)
 	}
@@ -58,13 +58,14 @@ func BuildProject(projectId, buildId int, buildCommand, dir, outputFolder string
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("[INSTALL] took so long")
+		} else if !strings.Contains(string(op), `ERROR: "type-check"`) {
+			return fmt.Errorf("[BUILD]\n" + string(op))
 		}
-		return fmt.Errorf("[BUILD]\n" + string(op))
 	}
 
 	// check if output folder exists else raise error
 	if !utils.FolderExists(dir + outputFolder) {
-		return fmt.Errorf("[BUILD] Specified output folder %s was not found after build", outputFolder)
+		return fmt.Errorf("[BUILD] Specified output folder %s was not found after build at %s", outputFolder, dir)
 	}
 
 	updateErr = utils.UpdateBuildLog(buildId, string(op))
@@ -75,16 +76,6 @@ func BuildProject(projectId, buildId int, buildCommand, dir, outputFolder string
 	log.Printf("[BUILD] Completed build of %d\n", buildId)
 
 	return nil
-}
-
-func loadNvmEnv() ([]string, error) {
-	cmd := exec.Command("bash", "-c", "source ~/.nvm/nvm.sh && env")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("error loading nvm environment: %v", err)
-	}
-	env := strings.Split(string(output), "\n")
-	return env, nil
 }
 
 func getEnvironmentVariables(projectId int) ([]string, error) {
