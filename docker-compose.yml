@@ -12,6 +12,7 @@ services:
     environment:
       MINIO_ROOT_USER: deploy-io
       MINIO_ROOT_PASSWORD: deploy-io
+      TZ: Asia/Kolkata
 
     volumes:
       - minio-data:/data
@@ -26,9 +27,10 @@ services:
     environment:
       POSTGRES_USER: deploy-io
       POSTGRES_PASSWORD: deploy-io
+      TZ: Asia/Kolkata
     
     volumes:
-      - pg-data:/data
+      - pg-data:/var/lib/postgresql/data
   
   rabbit:
     image: rabbitmq
@@ -37,6 +39,9 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    
+    environment:
+      TZ: Asia/Kolkata
     
     volumes:
       - pg-data:/rabbit

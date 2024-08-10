@@ -26,6 +26,7 @@ func DeleteDirectory(folderPath string) error {
 	return nil
 }
 
+// Returns absolute path of root of the project without trail at the end
 func GetCurDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -63,7 +64,7 @@ func UpdateBuildLog(buildId int, log string) error {
 }
 
 func SetBuildStatus(buildId int, status string) error {
-	query := `UPDATE "deploy-io".builds SET status = $1::"deploy-io".build_status WHERE id = $2`
+	query := `UPDATE "deploy-io".builds SET status = $1 WHERE id = $2`
 	_, queErr := config.DataBase.Exec(query, status, buildId)
 	if queErr != nil {
 		return queErr
@@ -73,10 +74,10 @@ func SetBuildStatus(buildId int, status string) error {
 }
 
 func LoadNvmEnv(nodeVersion int) ([]string, error) {
-	cmd := exec.Command("bash", "-c", "source ~/.nvm/nvm.sh && nvm install "+fmt.Sprintf("%v", nodeVersion)+" && nvm use "+fmt.Sprintf("%v", nodeVersion)+" && env")
+	cmd := exec.Command("bash", "-c", "source $NVM_DIR/nvm.sh && nvm install "+fmt.Sprintf("%v", nodeVersion)+" && nvm use "+fmt.Sprintf("%v", nodeVersion)+" && env")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("error loading nvm environment: %v", err)
+		return nil, fmt.Errorf("%v : %v", string(output), string(err.Error()))
 	}
 	env := strings.Split(string(output), "\n")
 	return env, nil

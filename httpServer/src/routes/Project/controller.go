@@ -47,7 +47,7 @@ func (p ProjectHandler) InsertEnvironments(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
-		_, insertErr := insertStatement.Exec(environment.ProjectId, environment.Key, val)
+		_, insertErr := insertStatement.Exec(requestBody.ProjectId, environment.Key, val)
 		if insertErr != nil {
 			utils.HandleError(utils.ErrInternal, insertErr, w, nil)
 			return

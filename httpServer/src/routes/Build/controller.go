@@ -84,7 +84,7 @@ func (b BuildHandler) CreateBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[rabbitMQ] send %s", responseBody)
+	log.Printf("[rabbitMQ] sent %s", responseBody)
 
 	w.Write(responseBody)
 }

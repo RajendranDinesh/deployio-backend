@@ -23,12 +23,12 @@ type ListProject struct {
 }
 
 type Environment struct {
-	ProjectId int    `json:"project_id"`
-	Key       string `json:"key"`
-	Value     string `json:"value"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type InsertEnvironmentBody struct {
+	ProjectId    int           `json:"project_id"`
 	Environments []Environment `json:"environments"`
 }
 

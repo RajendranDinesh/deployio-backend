@@ -74,7 +74,7 @@ func main() {
 		case strings.HasSuffix(fileName, ".gif"):
 			c.Type("gif")
 		case strings.HasSuffix(fileName, ".svg"):
-			c.Type("svg+xml")
+			c.Set("Content-Type", "image/svg+xml")
 		default:
 			c.Type("text")
 		}
