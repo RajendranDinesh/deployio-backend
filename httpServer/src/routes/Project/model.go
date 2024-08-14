@@ -6,16 +6,17 @@ type ProjectHandler struct{}
 
 type Project struct {
 	Name           string  `json:"name"`
-	GithubId       int     `json:"github_id"`
+	GithubId       string  `json:"github_id"`
 	InstallCommand *string `json:"install_command"`
 	BuildCommand   *string `json:"build_command"`
 	OutputFolder   *string `json:"output_folder"`
+	NodeVersion    *string `json:"node_version"`
+	Directory      *string `json:"directory"`
 }
 
 type ListProject struct {
 	Id             int       `json:"id"`
 	Name           string    `json:"name"`
-	GithubId       int       `json:"github_id"`
 	InstallCommand string    `json:"install_command"`
 	BuildCommand   string    `json:"build_command"`
 	OutputFolder   string    `json:"output_folder"`

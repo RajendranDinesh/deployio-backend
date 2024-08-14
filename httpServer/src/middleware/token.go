@@ -27,7 +27,6 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 
 		if isAccessValid && isRefreshValid {
 			next.ServeHTTP(w, r)
-			return
 		} else if isRefreshValid {
 			var TokenPayload auth.UserSignInPayload
 			var refreshToken string
@@ -52,7 +51,6 @@ func GithubTokenValidation(next http.Handler) http.Handler {
 
 			auth.UpdateUserTokens(response, int64(userId))
 			next.ServeHTTP(w, r)
-			return
 		} else {
 			utils.HandleError(utils.TokenExpired, err, w, nil)
 			return
