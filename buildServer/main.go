@@ -119,10 +119,13 @@ func main() {
 				continue
 			}
 
+			projectDir := utils.GetCurDir() + "/tmp/" + workingDir
+
 			directory, installCommand, buildCommand, outputFolder, nodeVersion, getInstallCmdErr := getDefaults(request.BuildId)
 			if getInstallCmdErr != nil {
 				utils.UpdateBuildLog(request.BuildId, getInstallCmdErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
+				utils.DeleteDirectory(projectDir)
 				log.Println("[GETi&bCMD] failed to get install or build command " + getInstallCmdErr.Error())
 				continue
 			}
@@ -130,8 +133,6 @@ func main() {
 			if outputFolder[0] != '/' {
 				outputFolder = "/" + outputFolder
 			}
-
-			projectDir := utils.GetCurDir() + "/tmp/" + workingDir
 
 			if directory != "./" {
 				projectDir = projectDir + directory
@@ -141,6 +142,7 @@ func main() {
 			if installErr != nil {
 				utils.UpdateBuildLog(request.BuildId, installErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
+				utils.DeleteDirectory(projectDir)
 				log.Println("[SERVER] failed to install dependencies " + installErr.Error())
 				continue
 			}
@@ -149,6 +151,7 @@ func main() {
 			if builderr != nil {
 				utils.UpdateBuildLog(request.BuildId, builderr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
+				utils.DeleteDirectory(projectDir)
 				log.Println("[SERVER] failed to build project " + builderr.Error())
 				continue
 			}
@@ -157,6 +160,7 @@ func main() {
 			if uploadErr != nil {
 				utils.UpdateBuildLog(request.BuildId, uploadErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
+				utils.DeleteDirectory(projectDir)
 				log.Println("[UPLOAD] failed to upload stuff " + uploadErr.Error())
 				continue
 			}
@@ -166,6 +170,7 @@ func main() {
 			if setFalseErr != nil {
 				utils.UpdateBuildLog(request.BuildId, setFalseErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
+				utils.DeleteDirectory(projectDir)
 				log.Println("[UPDATE] failed to update existing status to false " + setFalseErr.Error())
 				continue
 			}
@@ -175,6 +180,7 @@ func main() {
 			if insErr != nil {
 				utils.UpdateBuildLog(request.BuildId, insErr.Error())
 				utils.SetBuildStatus(request.BuildId, "failure")
+				utils.DeleteDirectory(projectDir)
 				log.Println("[INSERT] failed to insert new build into deployments " + insErr.Error())
 				continue
 			}
@@ -185,7 +191,7 @@ func main() {
 	<-forever
 }
 
-func InstallDependencies(buildId, nodeVersion int, installCommand, dir string) error {
+func InstallDependencies(buildId int, nodeVersion, installCommand, dir string) error {
 	command := strings.Fields(installCommand)
 
 	cmdName := command[0]
@@ -267,19 +273,18 @@ func getArchiveURL(githubId int, userId int) (string, error) {
 	return repoResponse.ArchiveURL, nil
 }
 
-func getDefaults(buildId int) (string, string, string, string, int, error) {
-	var installCommand, buildCommand, outputFolder, directory string
-	var nodeVersion int
+func getDefaults(buildId int) (string, string, string, string, string, error) {
+	var installCommand, buildCommand, outputFolder, directory, nodeVersion string
 
 	retQuery := `SELECT p.directory, p.install_command, p.build_command, p.output_folder, p.node_version FROM "deploy-io".projects p JOIN "deploy-io".builds b ON p.id = b.project_id WHERE b.id = $1`
 	queryErr := config.DataBase.QueryRow(retQuery, buildId).Scan(&directory, &installCommand, &buildCommand, &outputFolder, &nodeVersion)
 	if queryErr != nil {
-		return "", "", "", "", 0, queryErr
+		return "", "", "", "", "", queryErr
 	}
 
 	updateErr := utils.UpdateBuildLog(buildId, "[CMD] got installation ("+installCommand+") and build ("+buildCommand+") commands")
 	if updateErr != nil {
-		return "", "", "", "", 0, nil
+		return "", "", "", "", "", nil
 	}
 
 	return directory, installCommand, buildCommand, outputFolder, nodeVersion, nil

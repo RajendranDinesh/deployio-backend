@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func BuildProject(projectId, buildId, nodeVersion int, buildCommand, dir, outputFolder string) error {
+func BuildProject(projectId, buildId int, nodeVersion, buildCommand, dir, outputFolder string) error {
 	command := strings.Fields(buildCommand)
 
 	cmdName := command[0]

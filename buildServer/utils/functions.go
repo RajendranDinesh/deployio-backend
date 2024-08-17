@@ -73,7 +73,7 @@ func SetBuildStatus(buildId int, status string) error {
 	return nil
 }
 
-func LoadNvmEnv(nodeVersion int) ([]string, error) {
+func LoadNvmEnv(nodeVersion string) ([]string, error) {
 	cmd := exec.Command("bash", "-c", "source $NVM_DIR/nvm.sh && nvm install "+fmt.Sprintf("%v", nodeVersion)+" && nvm use "+fmt.Sprintf("%v", nodeVersion)+" && env")
 	output, err := cmd.Output()
 	if err != nil {

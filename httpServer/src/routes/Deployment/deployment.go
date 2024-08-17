@@ -17,6 +17,7 @@ func DeploymentRouter() chi.Router {
 		r.Use(jwtauth.Authenticator(auth.GetJWTAuthConfig()))
 
 		r.Get("/all", d.ListDeployments)
+		r.Get("/{id}", d.Deployment)
 		r.Delete("/", d.DeleteDeployment)
 	})
 

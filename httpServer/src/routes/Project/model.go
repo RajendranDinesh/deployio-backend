@@ -22,6 +22,7 @@ type ListProject struct {
 	OutputFolder   string    `json:"output_folder"`
 	NodeVersion    string    `json:"node_version"`
 	Directory      string    `json:"directory"`
+	IsActive       bool      `json:"is_active"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

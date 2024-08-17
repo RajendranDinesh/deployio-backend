@@ -9,9 +9,54 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/minio/minio-go/v7"
 )
+
+func (DeploymentHandler) Deployment(w http.ResponseWriter, r *http.Request) {
+	projectId := chi.URLParam(r, "id")
+
+	query := `
+		SELECT b.commit_hash, p."name", d.created_at FROM "deploy-io".deployments d
+		JOIN "deploy-io".builds b ON b.id = d.build_id
+		JOIN "deploy-io".projects p ON p.id = d.project_id
+		WHERE d.project_id = $1 AND d.status = TRUE
+		ORDER BY d.created_at LIMIT 1;
+	`
+
+	var commitHash, projectName string
+	var createdAt time.Time
+
+	err := config.DataBase.QueryRow(query, projectId).Scan(&commitHash, &projectName, &createdAt)
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows in result set") {
+			w.WriteHeader(404)
+			w.Write([]byte(`not found`))
+			return
+		}
+
+		utils.HandleError(utils.ErrInternal, err, w, nil)
+		return
+	}
+
+	responseBody := map[string]any{
+		"commit_hash":  commitHash,
+		"project_name": projectName,
+		"is_active":    true,
+		"created_at":   createdAt,
+	}
+
+	response, constructorErr := json.Marshal(responseBody)
+	if constructorErr != nil {
+		utils.HandleError(utils.ErrInternal, constructorErr, w, nil)
+		return
+	}
+
+	w.Write(response)
+}
 
 func (DeploymentHandler) DeleteDeployment(w http.ResponseWriter, r *http.Request) {
 	userId := utils.GetUserIdFromContext(w, r)

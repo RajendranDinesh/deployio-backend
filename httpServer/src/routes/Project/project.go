@@ -18,7 +18,7 @@ func ProjectRouter() chi.Router {
 
 		r.Get("/all", p.ListProjects)
 		r.Post("/new", p.CreateNewProject)
-		r.Get("/", p.Project)
+		r.Get("/{id}", p.Project)
 		r.Get("/environments", p.ListEnvKeys)
 		r.Post("/environments", p.InsertEnvironments)
 		r.Put("/environments", p.UpdateEnvValue)

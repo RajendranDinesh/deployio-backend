@@ -91,7 +91,7 @@ func GetGithubURL(githubId int, userId int) (string, error) {
 	}
 
 	type RepoResponse struct {
-		Url string `json:"url"`
+		HtmlURL string `json:"html_url"`
 	}
 
 	var Response RepoResponse
@@ -101,5 +101,5 @@ func GetGithubURL(githubId int, userId int) (string, error) {
 		return "", deconstructorErr
 	}
 
-	return Response.Url, nil
+	return Response.HtmlURL, nil
 }

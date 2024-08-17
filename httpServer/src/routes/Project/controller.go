@@ -15,30 +15,16 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func (p ProjectHandler) Project(w http.ResponseWriter, r *http.Request) {
-	body, readBodyErr := io.ReadAll(r.Body)
-	if readBodyErr != nil {
-		utils.HandleError(utils.ErrInvalid, readBodyErr, w, nil)
-		return
-	}
+	projectId := chi.URLParam(r, "id")
 
 	userId := utils.GetUserIdFromContext(w, r)
 	if userId == nil {
 		utils.HandleError(utils.TokenExpired, nil, w, nil)
-		return
-	}
-
-	type RequestBody struct {
-		ProjectId int `json:"project_id"`
-	}
-
-	var requestBody RequestBody
-
-	jsonDestructErr := json.Unmarshal(body, &requestBody)
-	if jsonDestructErr != nil {
-		utils.HandleError(utils.ErrInvalid, jsonDestructErr, w, nil)
 		return
 	}
 
@@ -65,7 +51,7 @@ func (p ProjectHandler) Project(w http.ResponseWriter, r *http.Request) {
 	var response ResponseBody
 	var temp tempBody
 
-	err := config.DataBase.QueryRow(query, requestBody.ProjectId, &userId).Scan(&response.Name,
+	err := config.DataBase.QueryRow(query, projectId, &userId).Scan(&response.Name,
 		&response.Directory, &response.NodeVersion, &response.InstallCommand,
 		&response.BuildCommand, &response.OutputFolder, &temp.GithubId)
 	if err != nil {
@@ -75,13 +61,13 @@ func (p ProjectHandler) Project(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		utils.HandleError(utils.ErrInternal, jsonDestructErr, w, nil)
+		utils.HandleError(utils.ErrInternal, err, w, nil)
 		return
 	}
 
 	githubURL, fetchGHURLErr := github.GetGithubURL(temp.GithubId, *userId)
 	if fetchGHURLErr != nil {
-		utils.HandleError(utils.ErrInternal, jsonDestructErr, w, nil)
+		utils.HandleError(utils.ErrInternal, fetchGHURLErr, w, nil)
 		return
 	}
 
@@ -255,7 +241,14 @@ func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 	var projects []ListProject
 
-	query := `SELECT id, name, install_command, build_command, output_folder, created_at, directory, node_version FROM "deploy-io".projects WHERE user_id = $1`
+	query := `SELECT p.id, p.name, p.install_command,
+		p.build_command, p.output_folder, p.created_at,
+		p.directory, p.node_version, 
+		COALESCE (BOOL_OR(d.status), FALSE) AS is_active
+		FROM "deploy-io".projects p LEFT JOIN "deploy-io".deployments d ON d.project_id = p.id
+		WHERE p.user_id = $1 GROUP BY p.id;
+	`
+
 	rows, queryErr := config.DataBase.Query(query, userId)
 	if queryErr != nil {
 		utils.HandleError(utils.ErrInvalid, queryErr, w, nil)
@@ -266,7 +259,7 @@ func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var project ListProject
-		rowsErr := rows.Scan(&project.Id, &project.Name, &project.InstallCommand, &project.BuildCommand, &project.OutputFolder, &project.CreatedAt, &project.Directory, &project.NodeVersion)
+		rowsErr := rows.Scan(&project.Id, &project.Name, &project.InstallCommand, &project.BuildCommand, &project.OutputFolder, &project.CreatedAt, &project.Directory, &project.NodeVersion, &project.IsActive)
 		if rowsErr != nil {
 			utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 			return
