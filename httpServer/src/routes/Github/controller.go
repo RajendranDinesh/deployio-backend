@@ -67,3 +67,39 @@ func getUserRepositories(userId int) (*RepoAPIResponse, error) {
 
 	return &RepoAPIResponse, nil
 }
+
+func GetGithubURL(githubId int, userId int) (string, error) {
+	accessToken, accessTokenErr := auth.GetAccessToken(userId)
+	if accessTokenErr != nil || accessToken == nil {
+		return "", accessTokenErr
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + *accessToken,
+	}
+
+	repoResp, repoErr := utils.Request("GET", fmt.Sprintf("https://api.github.com/repositories/%d", githubId), &headers, nil, nil)
+	if repoErr != nil {
+		return "", repoErr
+	}
+
+	defer repoResp.Body.Close()
+
+	repoBody, repoReadErr := io.ReadAll(repoResp.Body)
+	if repoReadErr != nil {
+		return "", repoErr
+	}
+
+	type RepoResponse struct {
+		Url string `json:"url"`
+	}
+
+	var Response RepoResponse
+
+	deconstructorErr := json.Unmarshal(repoBody, &Response)
+	if deconstructorErr != nil {
+		return "", deconstructorErr
+	}
+
+	return Response.Url, nil
+}

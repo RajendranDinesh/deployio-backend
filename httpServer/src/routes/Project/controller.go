@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"httpServer/config"
+	github "httpServer/src/routes/Github"
 	"httpServer/utils"
 	"io"
 	"net/http"
@@ -15,6 +16,85 @@ import (
 	"strconv"
 	"strings"
 )
+
+func (p ProjectHandler) Project(w http.ResponseWriter, r *http.Request) {
+	body, readBodyErr := io.ReadAll(r.Body)
+	if readBodyErr != nil {
+		utils.HandleError(utils.ErrInvalid, readBodyErr, w, nil)
+		return
+	}
+
+	userId := utils.GetUserIdFromContext(w, r)
+	if userId == nil {
+		utils.HandleError(utils.TokenExpired, nil, w, nil)
+		return
+	}
+
+	type RequestBody struct {
+		ProjectId int `json:"project_id"`
+	}
+
+	var requestBody RequestBody
+
+	jsonDestructErr := json.Unmarshal(body, &requestBody)
+	if jsonDestructErr != nil {
+		utils.HandleError(utils.ErrInvalid, jsonDestructErr, w, nil)
+		return
+	}
+
+	query := `SELECT
+			name, directory, node_version,
+			install_command, build_command, output_folder,
+			github_id
+	FROM "deploy-io".projects p WHERE p.id = $1 AND p.user_id = $2`
+
+	type ResponseBody struct {
+		Name           string `json:"name"`
+		Directory      string `json:"directory"`
+		NodeVersion    string `json:"node_version"`
+		InstallCommand string `json:"install_command"`
+		BuildCommand   string `json:"build_command"`
+		OutputFolder   string `json:"output_folder"`
+		GithubURL      string `json:"github_url"`
+	}
+
+	type tempBody struct {
+		GithubId int
+	}
+
+	var response ResponseBody
+	var temp tempBody
+
+	err := config.DataBase.QueryRow(query, requestBody.ProjectId, &userId).Scan(&response.Name,
+		&response.Directory, &response.NodeVersion, &response.InstallCommand,
+		&response.BuildCommand, &response.OutputFolder, &temp.GithubId)
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows in result set") {
+			w.WriteHeader(404)
+			w.Write([]byte(`not found`))
+			return
+		}
+
+		utils.HandleError(utils.ErrInternal, jsonDestructErr, w, nil)
+		return
+	}
+
+	githubURL, fetchGHURLErr := github.GetGithubURL(temp.GithubId, *userId)
+	if fetchGHURLErr != nil {
+		utils.HandleError(utils.ErrInternal, jsonDestructErr, w, nil)
+		return
+	}
+
+	response.GithubURL = githubURL
+
+	responseBody, jsonConstructorErr := json.Marshal(response)
+	if jsonConstructorErr != nil {
+		utils.HandleError(utils.ErrInternal, jsonConstructorErr, w, nil)
+		return
+	}
+
+	w.Write(responseBody)
+}
 
 func (p ProjectHandler) InsertEnvironments(w http.ResponseWriter, r *http.Request) {
 	body, readBodyErr := io.ReadAll(r.Body)
@@ -175,7 +255,7 @@ func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 	var projects []ListProject
 
-	query := `SELECT id, name, install_command, build_command, output_folder, created_at FROM "deploy-io".projects WHERE user_id = $1`
+	query := `SELECT id, name, install_command, build_command, output_folder, created_at, directory, node_version FROM "deploy-io".projects WHERE user_id = $1`
 	rows, queryErr := config.DataBase.Query(query, userId)
 	if queryErr != nil {
 		utils.HandleError(utils.ErrInvalid, queryErr, w, nil)
@@ -186,7 +266,7 @@ func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var project ListProject
-		rowsErr := rows.Scan(&project.Id, &project.Name, &project.InstallCommand, &project.BuildCommand, &project.OutputFolder, &project.CreatedAt)
+		rowsErr := rows.Scan(&project.Id, &project.Name, &project.InstallCommand, &project.BuildCommand, &project.OutputFolder, &project.CreatedAt, &project.Directory, &project.NodeVersion)
 		if rowsErr != nil {
 			utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 			return
@@ -234,19 +314,19 @@ func (p ProjectHandler) CreateNewProject(w http.ResponseWriter, r *http.Request)
 		project.InstallCommand = &installCommand
 	}
 
-	if project.BuildCommand == nil {
+	if project.BuildCommand == nil || len(strings.TrimSpace(*project.BuildCommand)) == 0 {
 		project.BuildCommand = &buildCommand
 	}
 
-	if project.OutputFolder == nil {
+	if project.OutputFolder == nil || len(strings.TrimSpace(*project.OutputFolder)) == 0 {
 		project.OutputFolder = &outputFolder
 	}
 
-	if project.NodeVersion == nil {
+	if project.NodeVersion == nil || len(strings.TrimSpace(*project.NodeVersion)) == 0 {
 		project.NodeVersion = &nodeVersion
 	}
 
-	if project.Directory == nil {
+	if project.Directory == nil || len(strings.TrimSpace(*project.Directory)) == 0 {
 		project.Directory = &directory
 	}
 

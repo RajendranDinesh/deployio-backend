@@ -20,6 +20,8 @@ type ListProject struct {
 	InstallCommand string    `json:"install_command"`
 	BuildCommand   string    `json:"build_command"`
 	OutputFolder   string    `json:"output_folder"`
+	NodeVersion    string    `json:"node_version"`
+	Directory      string    `json:"directory"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
