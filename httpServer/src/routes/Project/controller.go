@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -136,11 +137,7 @@ func (p ProjectHandler) InsertEnvironments(w http.ResponseWriter, r *http.Reques
 }
 
 func (p ProjectHandler) ListEnvKeys(w http.ResponseWriter, r *http.Request) {
-	body, readBodyErr := io.ReadAll(r.Body)
-	if readBodyErr != nil {
-		utils.HandleError(utils.ErrInvalid, readBodyErr, w, nil)
-		return
-	}
+	projectId := chi.URLParam(r, "id")
 
 	userId := utils.GetUserIdFromContext(w, r)
 	if userId == nil {
@@ -148,15 +145,13 @@ func (p ProjectHandler) ListEnvKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var requestBody ListEnvKeysBody
-	jsonDestructErr := json.Unmarshal(body, &requestBody)
-	if jsonDestructErr != nil {
-		utils.HandleError(utils.ErrInvalid, jsonDestructErr, w, nil)
-		return
-	}
-
-	query := `SELECT e.key FROM "deploy-io".environments e JOIN "deploy-io".projects p ON p.id = e.project_id AND p.id = $1 AND p.user_id = $2`
-	rows, queryErr := config.DataBase.Query(query, requestBody.ProjectId, userId)
+	query := `SELECT e.key, e.updated_at FROM "deploy-io".environments e
+		JOIN "deploy-io".projects p ON p.id = e.project_id
+		AND p.id = $1
+		AND p.user_id = $2
+		ORDER BY e.key;
+	`
+	rows, queryErr := config.DataBase.Query(query, projectId, userId)
 	if queryErr != nil {
 		utils.HandleError(utils.ErrInvalid, queryErr, w, nil)
 		return
@@ -164,20 +159,27 @@ func (p ProjectHandler) ListEnvKeys(w http.ResponseWriter, r *http.Request) {
 
 	defer rows.Close()
 
-	var envKeys []string
+	type Env struct {
+		Key       string    `json:"key"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+
+	var envKeys []Env
 
 	for rows.Next() {
-		var env string
-		rowsErr := rows.Scan(&env)
+		var env Env
+		rowsErr := rows.Scan(&env.Key, &env.UpdatedAt)
 		if rowsErr != nil {
 			utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 			return
 		}
 
+		println(env.UpdatedAt.String())
+
 		envKeys = append(envKeys, env)
 	}
 
-	responseBody := map[string][]string{
+	responseBody := map[string][]Env{
 		"keys": envKeys,
 	}
 
@@ -205,16 +207,37 @@ func (p ProjectHandler) UpdateEnvValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userId := utils.GetUserIdFromContext(w, r)
+	if userId == nil {
+		utils.HandleError(utils.TokenExpired, nil, w, nil)
+		return
+	}
+
 	encryptedValue, encErr := encrypt(requestBody.Value)
 	if encErr != nil {
 		utils.HandleError(utils.ErrInvalid, encErr, w, nil)
 		return
 	}
 
-	updateQuery := `UPDATE "deploy-io".environments SET value = $1 WHERE project_id = $2 AND key = $3`
-	_, updateErr := config.DataBase.Exec(updateQuery, encryptedValue, requestBody.ProjectId, requestBody.Key)
+	updateQuery := `UPDATE "deploy-io".environments SET value = $1 FROM "deploy-io".projects p
+		WHERE "deploy-io".environments.project_id = $2
+		AND "deploy-io".environments.key = $3
+		AND p.user_id = $4;
+	`
+	res, updateErr := config.DataBase.Exec(updateQuery, encryptedValue, requestBody.ProjectId, requestBody.Key, userId)
 	if updateErr != nil {
 		utils.HandleError(utils.ErrInternal, updateErr, w, nil)
+		return
+	}
+
+	rowsAffected, rowsAffectErr := res.RowsAffected()
+	if rowsAffectErr != nil {
+		utils.HandleError(utils.ErrInternal, rowsAffectErr, w, nil)
+		return
+	}
+
+	if rowsAffected == 0 {
+		utils.HandleError(utils.ErrNotFound, fmt.Errorf("either key doesn't exists or the user has no permission"), w, nil)
 		return
 	}
 
@@ -230,6 +253,44 @@ func (p ProjectHandler) UpdateEnvValue(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(response)
+}
+
+func (p ProjectHandler) DeleteEnv(w http.ResponseWriter, r *http.Request) {
+	requestBody, reqReadErr := io.ReadAll(r.Body)
+	if reqReadErr != nil {
+		utils.HandleError(utils.ErrInvalid, reqReadErr, w, nil)
+		return
+	}
+
+	userId := utils.GetUserIdFromContext(w, r)
+	if userId == nil {
+		utils.HandleError(utils.TokenExpired, nil, w, nil)
+		return
+	}
+
+	type RequestBody struct {
+		ProjectId int    `json:"project_id"`
+		EnvKey    string `json:"env_key"`
+	}
+
+	var body RequestBody
+	deconstructorErr := json.Unmarshal(requestBody, &body)
+	if deconstructorErr != nil {
+		utils.HandleError(utils.ErrInvalid, deconstructorErr, w, nil)
+		return
+	}
+
+	query := `
+		DELETE FROM "deploy-io".environments e USING "deploy-io".projects p
+		WHERE e.project_id = $1 AND e.key = $2 AND p.id = $1 AND p.user_id = $3;
+	`
+	_, queryErr := config.DataBase.Exec(query, body.ProjectId, body.EnvKey, *userId)
+	if queryErr != nil {
+		utils.HandleError(utils.ErrInternal, queryErr, w, nil)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +310,7 @@ func (p ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		WHERE p.user_id = $1 GROUP BY p.id;
 	`
 
-	rows, queryErr := config.DataBase.Query(query, userId)
+	rows, queryErr := config.DataBase.Query(query, *userId)
 	if queryErr != nil {
 		utils.HandleError(utils.ErrInvalid, queryErr, w, nil)
 		return

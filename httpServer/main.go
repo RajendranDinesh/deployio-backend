@@ -14,6 +14,8 @@ import (
 	"httpServer/src"
 
 	"github.com/joho/godotenv"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 func main() {
@@ -30,9 +32,11 @@ func main() {
 
 	log.Printf("[SERVER] Exposed On %[1]s:%[2]s\n", ipAddress, port)
 
-	// graceful shutdown implementation
+	http2Server := &http2.Server{}
 
-	server := &http.Server{Addr: ipAddress + ":" + port, Handler: src.Service()}
+	server := &http.Server{Addr: ipAddress + ":" + port, Handler: h2c.NewHandler(src.Service(), http2Server)}
+
+	// graceful shutdown implementation
 
 	serverCtx, serverStopCtx := context.WithCancel(context.Background())
 

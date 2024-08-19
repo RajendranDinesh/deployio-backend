@@ -10,8 +10,11 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 func init() {
@@ -81,6 +84,9 @@ func main() {
 
 		return c.Send(file)
 	})
+
+	http2Server := &http2.Server{}
+	app.Use(adaptor.HTTPHandler(h2c.NewHandler(adaptor.FiberApp(app), http2Server)))
 
 	// Start the server on port 3000
 	log.Fatal(app.Listen(":3000"))
