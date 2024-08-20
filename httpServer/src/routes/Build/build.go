@@ -20,8 +20,8 @@ func BuildRouter() chi.Router {
 		r.Use(middleware.GithubTokenValidation)
 
 		r.Post("/new", u.CreateBuild)
-		r.Get("/all", u.ListBuilds)
-		r.Get("/", u.Build)
+		r.Get("/all/{id}", u.ListBuilds)
+		r.Get("/{id}", u.Build)
 	})
 
 	return r

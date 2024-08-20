@@ -1,6 +1,7 @@
 package project
 
 import (
+	"httpServer/src/middleware"
 	auth "httpServer/src/routes/Auth"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,8 @@ func ProjectRouter() chi.Router {
 	r.Group(func(r chi.Router) {
 		r.Use(jwtauth.Verifier(auth.GetJWTAuthConfig()))
 		r.Use(jwtauth.Authenticator(auth.GetJWTAuthConfig()))
+
+		r.Use(middleware.GithubTokenValidation)
 
 		r.Get("/all", p.ListProjects)
 		r.Post("/new", p.CreateNewProject)

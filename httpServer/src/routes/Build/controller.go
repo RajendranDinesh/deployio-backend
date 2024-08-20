@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/rabbitmq/amqp091-go"
 )
 
@@ -181,18 +182,7 @@ func getCommitSha(githubId int, userId int) (string, error) {
 }
 
 func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
-	reqBody, readBodyErr := io.ReadAll(r.Body)
-	if readBodyErr != nil {
-		utils.HandleError(utils.ErrInternal, readBodyErr, w, nil)
-		return
-	}
-
-	var listBuildsBody ListBuildsBody
-	deconstructorErr := json.Unmarshal(reqBody, &listBuildsBody)
-	if deconstructorErr != nil {
-		utils.HandleError(utils.ErrInternal, deconstructorErr, w, nil)
-		return
-	}
+	projectId := chi.URLParam(r, "id")
 
 	userId := utils.GetUserIdFromContext(w, r)
 	if userId == nil {
@@ -202,8 +192,11 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 
 	var listBuilds []Build
 
-	listBuildQuery := `SELECT id, status, triggered_by, commit_hash, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.project_id = $1`
-	builds, rowsErr := config.DataBase.Query(listBuildQuery, listBuildsBody.ProjectId)
+	listBuildQuery := `SELECT b.id, b.status, b.triggered_by, b.commit_hash, b.created_at FROM "deploy-io".builds b
+		JOIN "deploy-io".projects p ON p.id = b.project_id
+		WHERE b.project_id = $1 AND p.user_id = $2 ORDER BY b.id DESC;
+	`
+	builds, rowsErr := config.DataBase.Query(listBuildQuery, projectId, userId)
 	if rowsErr != nil {
 		utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 		return
@@ -211,7 +204,7 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 
 	for builds.Next() {
 		var build Build
-		builds.Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Start_time, &build.End_time, &build.Created_at, &build.Updated_at)
+		builds.Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Created_at)
 
 		listBuilds = append(listBuilds, build)
 	}
@@ -230,18 +223,7 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b BuildHandler) Build(w http.ResponseWriter, r *http.Request) {
-	reqBody, readBodyErr := io.ReadAll(r.Body)
-	if readBodyErr != nil {
-		utils.HandleError(utils.ErrInternal, readBodyErr, w, nil)
-		return
-	}
-
-	var buildBody BuildBody
-	deconstructorErr := json.Unmarshal(reqBody, &buildBody)
-	if deconstructorErr != nil {
-		utils.HandleError(utils.ErrInternal, deconstructorErr, w, nil)
-		return
-	}
+	buildId := chi.URLParam(r, "id")
 
 	userId := utils.GetUserIdFromContext(w, r)
 	if userId == nil {
@@ -252,7 +234,7 @@ func (b BuildHandler) Build(w http.ResponseWriter, r *http.Request) {
 	var build Build
 
 	buildQuery := `SELECT id, status, triggered_by, commit_hash, logs, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.id = $1`
-	rowsErr := config.DataBase.QueryRow(buildQuery, buildBody.BuildId).Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Build_logs, &build.Start_time, &build.End_time, &build.Created_at, &build.Updated_at)
+	rowsErr := config.DataBase.QueryRow(buildQuery, buildId).Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Build_logs, &build.Start_time, &build.End_time, &build.Created_at, &build.Updated_at)
 	if rowsErr != nil {
 		utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 		return

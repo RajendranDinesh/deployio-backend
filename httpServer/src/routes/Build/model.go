@@ -18,20 +18,16 @@ type CommitObject struct {
 }
 
 // ListBuilds
-type ListBuildsBody struct {
-	ProjectId int `json:"project_id"`
-}
-
 type Build struct {
 	Id           int        `json:"build_id"`
 	Build_status string     `json:"build_status"`
 	Triggered_by string     `json:"triggered_by"`
 	Commit_hash  string     `json:"commit_hash"`
 	Build_logs   *string    `json:"build_logs,omitempty"`
-	Start_time   *time.Time `json:"start_time"`
-	End_time     *time.Time `json:"end_time"`
+	Start_time   *time.Time `json:"start_time,omitempty"`
+	End_time     *time.Time `json:"end_time,omitempty"`
 	Created_at   time.Time  `json:"created_at"`
-	Updated_at   time.Time  `json:"updated_at"`
+	Updated_at   *time.Time `json:"updated_at,omitempty"`
 }
 
 // Build
