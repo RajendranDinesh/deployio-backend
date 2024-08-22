@@ -81,14 +81,14 @@ func (DeploymentHandler) DeleteDeployment(w http.ResponseWriter, r *http.Request
 	var ProjectName string
 	var ProjectId int
 
-	query := `SELECT p.name, p.id FROM "deploy-io".projects p JOIN "deploy-io".builds b ON b.project_id = p.id WHERE b.id = $1`
-	qErr := config.DataBase.QueryRow(query, Request.BuildId).Scan(&ProjectName, &ProjectId)
+	query := `SELECT p.name, p.id FROM "deploy-io".projects p WHERE p.id = $1`
+	qErr := config.DataBase.QueryRow(query, Request.ProjectId).Scan(&ProjectName, &ProjectId)
 	if qErr != nil {
 		utils.HandleError(utils.ErrInternal, qErr, w, nil)
 		return
 	}
 
-	delErr := deleteFiles(ProjectName)
+	delErr := DeleteFiles(ProjectName)
 	if delErr != nil {
 		utils.HandleError(utils.ErrInternal, delErr, w, nil)
 		return
@@ -164,7 +164,7 @@ func (DeploymentHandler) ListDeployments(w http.ResponseWriter, r *http.Request)
 	w.Write(responseBody)
 }
 
-func deleteFiles(projectName string) error {
+func DeleteFiles(projectName string) error {
 	bucketName, bucketExists := os.LookupEnv("MIO_BUCKET")
 	if !bucketExists {
 		return fmt.Errorf("[DEPLOYMENT] bucket name was not set in env variable")

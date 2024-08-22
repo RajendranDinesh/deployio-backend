@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"httpServer/config"
+	deployment "httpServer/src/routes/Deployment"
 	github "httpServer/src/routes/Github"
 	"httpServer/utils"
 	"io"
@@ -81,6 +82,36 @@ func (p ProjectHandler) Project(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(responseBody)
+}
+
+func (p ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
+	userId := utils.GetUserIdFromContext(w, r)
+	if userId == nil {
+		utils.HandleError(utils.TokenExpired, nil, w, nil)
+		return
+	}
+
+	projectId := chi.URLParam(r, "projectId")
+
+	var projectName string
+
+	query := `
+		DELETE FROM "deploy-io".projects p WHERE p.id = $1 AND p.user_id = $2
+		RETURNING p.name;
+	`
+	queryErr := config.DataBase.QueryRow(query, projectId, *userId).Scan(&projectName)
+	if queryErr != nil {
+		utils.HandleError(utils.ErrInternal, queryErr, w, nil)
+		return
+	}
+
+	err := deployment.DeleteFiles(projectName)
+	if err != nil {
+		utils.HandleError(utils.ErrInternal, err, w, nil)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (p ProjectHandler) InsertEnvironments(w http.ResponseWriter, r *http.Request) {
@@ -173,8 +204,6 @@ func (p ProjectHandler) ListEnvKeys(w http.ResponseWriter, r *http.Request) {
 			utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 			return
 		}
-
-		println(env.UpdatedAt.String())
 
 		envKeys = append(envKeys, env)
 	}

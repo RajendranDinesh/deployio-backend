@@ -18,7 +18,7 @@ func DeploymentRouter() chi.Router {
 
 		r.Get("/all", d.ListDeployments)
 		r.Get("/{id}", d.Deployment)
-		r.Delete("/", d.DeleteDeployment)
+		r.Delete("/deactivate", d.DeleteDeployment)
 	})
 
 	return r

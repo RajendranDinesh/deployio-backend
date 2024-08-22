@@ -26,6 +26,7 @@ func ProjectRouter() chi.Router {
 		r.Post("/environments", p.InsertEnvironments)
 		r.Put("/environments", p.UpdateEnvValue)
 		r.Delete("/environments", p.DeleteEnv)
+		r.Delete("/{projectId}", p.DeleteProject)
 	})
 
 	return r

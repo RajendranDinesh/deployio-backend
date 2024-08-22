@@ -16,5 +16,5 @@ type ListDeploymentsReqBody struct {
 }
 
 type DeleteDeploymentReqBody struct {
-	BuildId int `json:"build_id"`
+	ProjectId int `json:"project_id"`
 }
