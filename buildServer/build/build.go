@@ -59,7 +59,7 @@ func BuildProject(projectId, buildId int, nodeVersion, buildCommand, dir, output
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("[INSTALL] took so long")
 		} else if !strings.Contains(string(op), `ERROR: "type-check"`) {
-			return fmt.Errorf("[BUILD]\n" + string(op))
+			return fmt.Errorf("[BUILD]" + string(op))
 		}
 	}
 

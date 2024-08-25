@@ -74,6 +74,7 @@ func main() {
 
 	defer config.RabbitConnection.Close()
 	defer config.RabbitChannel.Close()
+	defer config.DataBase.Close()
 	<-serverCtx.Done()
 }
 

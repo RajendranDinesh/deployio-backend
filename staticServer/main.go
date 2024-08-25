@@ -8,9 +8,11 @@ import (
 	"os"
 	"staticServer/config"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/gofiber/fiber/v3/middleware/cache"
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
 	"golang.org/x/net/http2"
@@ -47,6 +49,11 @@ func getFile(fileName string) ([]byte, error) {
 func main() {
 	// Initialize a new Fiber app
 	app := fiber.New()
+
+	app.Use(cache.New(cache.Config{
+		Expiration:   1 * time.Minute,
+		CacheControl: true,
+	}))
 
 	app.Get("*", func(c fiber.Ctx) error {
 		projectName := strings.Split(c.Hostname(), ".")[0]
