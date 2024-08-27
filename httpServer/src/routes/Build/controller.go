@@ -236,6 +236,12 @@ func (b BuildHandler) Build(w http.ResponseWriter, r *http.Request) {
 	buildQuery := `SELECT id, status, triggered_by, commit_hash, logs, start_time, end_time, created_at, updated_at FROM "deploy-io".builds b WHERE b.id = $1`
 	rowsErr := config.DataBase.QueryRow(buildQuery, buildId).Scan(&build.Id, &build.Build_status, &build.Triggered_by, &build.Commit_hash, &build.Build_logs, &build.Start_time, &build.End_time, &build.Created_at, &build.Updated_at)
 	if rowsErr != nil {
+		if strings.Contains(rowsErr.Error(), "no rows in result set") {
+			w.WriteHeader(404)
+			w.Write([]byte(`not found`))
+			return
+		}
+
 		utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 		return
 	}
