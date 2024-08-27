@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"staticServer/config"
 	"strings"
 	"time"
@@ -50,48 +51,55 @@ func main() {
 	// Initialize a new Fiber app
 	app := fiber.New()
 
+	// Cache configuration
 	app.Use(cache.New(cache.Config{
 		Expiration:   1 * time.Minute,
 		CacheControl: true,
 	}))
 
+	// MIME type map
+	mimeTypes := map[string]string{
+		".html": "text/html",
+		".js":   "application/javascript",
+		".css":  "text/css",
+		".json": "application/json",
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".gif":  "image/gif",
+		".svg":  "image/svg+xml",
+	}
+
+	// Route to handle all GET requests
 	app.Get("*", func(c fiber.Ctx) error {
 		projectName := strings.Split(c.Hostname(), ".")[0]
-		fileName := projectName + c.Path()
-		if c.Path() == "/" || !strings.Contains(c.Path(), ".") {
+		path := c.Path()
+
+		// Determine the file name
+		fileName := projectName + path
+		if path == "/" || !strings.Contains(path, ".") {
 			fileName = projectName + "/index.html"
 		}
 
+		// Get the file content
 		file, err := getFile(fileName)
 		if err != nil {
+			log.Printf("File not found: %s", fileName)
 			return c.Status(fiber.StatusNotFound).SendString("File not found")
 		}
 
-		// Set the appropriate content type based on the file extension
-		switch {
-		case strings.HasSuffix(fileName, ".html"):
-			c.Type("html")
-		case strings.HasSuffix(fileName, ".js"):
-			c.Set("Content-Type", "application/javascript")
-		case strings.HasSuffix(fileName, ".css"):
-			c.Type("css")
-		case strings.HasSuffix(fileName, ".json"):
-			c.Type("json")
-		case strings.HasSuffix(fileName, ".png"):
-			c.Type("png")
-		case strings.HasSuffix(fileName, ".jpg"), strings.HasSuffix(fileName, ".jpeg"):
-			c.Type("jpeg")
-		case strings.HasSuffix(fileName, ".gif"):
-			c.Type("gif")
-		case strings.HasSuffix(fileName, ".svg"):
-			c.Set("Content-Type", "image/svg+xml")
-		default:
+		// Set the content type based on the file extension
+		ext := filepath.Ext(fileName)
+		if mimeType, found := mimeTypes[ext]; found {
+			c.Set("Content-Type", mimeType)
+		} else {
 			c.Type("text")
 		}
 
 		return c.Send(file)
 	})
 
+	// HTTP/2 server setup
 	http2Server := &http2.Server{}
 	app.Use(adaptor.HTTPHandler(h2c.NewHandler(adaptor.FiberApp(app), http2Server)))
 
