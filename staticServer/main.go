@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -20,8 +21,15 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
+var IsOnProd bool
+
 func init() {
-	initGoDotENV()
+	parseFlags()
+
+	if !IsOnProd {
+		initGoDotENV()
+	}
+
 	config.InitMinioConnection()
 }
 
@@ -113,4 +121,35 @@ func initGoDotENV() {
 	if err != nil {
 		log.Fatalln("[SERVER] Error Loading .env file")
 	}
+}
+
+func parseFlags() {
+	env := flag.String("env", "dev", "The Environment in which the program is running, possible values are\n1. prod \n2. dev")
+
+	flag.Parse()
+
+	err := isOnProd(*env)
+
+	if err == flag.ErrHelp {
+		flag.PrintDefaults()
+		os.Exit(2)
+	}
+}
+
+// Changes the global variable IsOnProd
+func isOnProd(env string) error {
+	env = strings.TrimSpace(env)
+
+	if env == "dev" || len(env) == 0 {
+		IsOnProd = false
+		return nil
+	}
+
+	if env != "prod" {
+		return flag.ErrHelp
+	}
+
+	IsOnProd = true
+
+	return nil
 }
