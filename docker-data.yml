@@ -1,4 +1,3 @@
-version: '3'
 services:
   minio:
     image: minio/minio
@@ -8,6 +7,8 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
+    
+    restart: unless-stopped
 
     environment:
       MINIO_ROOT_USER: deploy-io
@@ -23,7 +24,9 @@ services:
 
     ports:
       - "5432:5432"
-
+    
+    restart: unless-stopped
+    
     environment:
       POSTGRES_USER: deploy-io
       POSTGRES_PASSWORD: deploy-io
