@@ -9,12 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"staticServer/config"
+	prom "staticServer/prometheus"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -29,6 +32,8 @@ func init() {
 	}
 
 	config.InitMinioConnection()
+
+	prometheus.MustRegister(prom.FileRequestCounter)
 }
 
 func getFile(fileName string) ([]byte, error) {
@@ -56,6 +61,8 @@ func getFile(fileName string) ([]byte, error) {
 func main() {
 	// Initialize a new Fiber app
 	app := fiber.New()
+
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	// MIME type map
 	mimeTypes := map[string]string{
@@ -86,6 +93,8 @@ func main() {
 		if err != nil {
 			return c.Status(fiber.StatusNotFound).SendFile("./public/404.html")
 		}
+
+		prom.FileRequestCounter.With(prometheus.Labels{"site": projectName, "file": fileName}).Inc()
 
 		// Set the content type based on the file extension
 		ext := filepath.Ext(fileName)
