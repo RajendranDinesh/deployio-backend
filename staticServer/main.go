@@ -10,11 +10,9 @@ import (
 	"path/filepath"
 	"staticServer/config"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
-	"github.com/gofiber/fiber/v3/middleware/cache"
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
 	"golang.org/x/net/http2"
@@ -59,12 +57,6 @@ func main() {
 	// Initialize a new Fiber app
 	app := fiber.New()
 
-	// Cache configuration
-	app.Use(cache.New(cache.Config{
-		Expiration:   1 * time.Minute,
-		CacheControl: true,
-	}))
-
 	// MIME type map
 	mimeTypes := map[string]string{
 		".html": "text/html",
@@ -92,8 +84,7 @@ func main() {
 		// Get the file content
 		file, err := getFile(fileName)
 		if err != nil {
-			log.Printf("File not found: %s", fileName)
-			return c.Status(fiber.StatusNotFound).SendString("File not found")
+			return c.Status(fiber.StatusNotFound).SendFile("./public/404.html")
 		}
 
 		// Set the content type based on the file extension
