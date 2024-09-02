@@ -81,7 +81,8 @@ func GetDBConnString() string {
 	password, dbPassExists := os.LookupEnv("DB_PASS")
 	databaseName, dbNameExists := os.LookupEnv("DB_NAME")
 
-	if !hostExists || !portExists || !dbUserExists || !dbPassExists || !dbNameExists {
+	if !hostExists || !portExists || !dbUserExists || !dbPassExists || !dbNameExists ||
+		len(host) == 0 || len(port) == 0 || len(username) == 0 || len(password) == 0 || len(databaseName) == 0 {
 		log.Fatalln("[DATABASE] Env probs..")
 	}
 

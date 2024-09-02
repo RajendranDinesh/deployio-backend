@@ -19,7 +19,8 @@ func InitMinioConnection() {
 	sslStatus, sslExists := os.LookupEnv("MIO_SSL")
 	bucket, bucketExists := os.LookupEnv("MIO_BUCKET")
 
-	if !endpointExists || !accessKeyExists || !secretExists || !sslExists || !bucketExists {
+	if !endpointExists || !accessKeyExists || !secretExists || !sslExists || !bucketExists ||
+		len(endpoint) == 0 || len(accessKey) == 0 || len(secretAccessKey) == 0 || len(sslStatus) == 0 || len(bucket) == 0 {
 		log.Fatalln("[MINIO] required env variable is missing.")
 	}
 

@@ -45,7 +45,8 @@ func getRabbitMQConnectionString() string {
 	user, userExists := os.LookupEnv("MQ_USER")
 	pass, passExists := os.LookupEnv("MQ_PASS")
 
-	if !hostExists || !portExists || !userExists || !passExists {
+	if !hostExists || !portExists || !userExists || !passExists ||
+		len(host) == 0 || len(port) == 0 || len(user) == 0 || len(pass) == 0 {
 		log.Fatalln("[RABBIT] check environment configuration")
 	}
 
