@@ -1,6 +1,3 @@
 launch.json
 .env
 tmp
-staticServer
-buildServer
-httpServer
