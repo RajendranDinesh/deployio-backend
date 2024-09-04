@@ -87,7 +87,7 @@ func GetArchiveURL(githubId int, userId int) (string, error) {
 	}
 
 	var repoResponse struct {
-		ArchiveURL string
+		ArchiveURL string `json:"archive_url"`
 	}
 
 	deconstructorErr := json.Unmarshal(repoBody, &repoResponse)

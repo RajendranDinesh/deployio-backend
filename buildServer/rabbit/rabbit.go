@@ -16,7 +16,7 @@ import (
 func ConsumeRabbitQueue(msgs <-chan amqp.Delivery) {
 	for d := range msgs {
 		var request struct {
-			BuildId int
+			BuildId int `json:"build_id"`
 		}
 
 		deconstructorErr := json.Unmarshal(d.Body, &request)
