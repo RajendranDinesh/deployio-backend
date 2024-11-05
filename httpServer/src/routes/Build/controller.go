@@ -9,7 +9,9 @@ import (
 	"httpServer/utils"
 	"io"
 	"log"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,6 +186,24 @@ func getCommitSha(githubId int, userId int) (string, error) {
 func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 	projectId := chi.URLParam(r, "id")
 
+	limit, _ := strconv.Atoi(r.URL.Query().Get("l"))
+
+	limit = int(math.Abs(float64(limit)))
+
+	if limit == 0 {
+		limit = 5
+	}
+
+	pageNumber, _ := strconv.Atoi(r.URL.Query().Get("p"))
+
+	pageNumber = int(math.Abs(float64(pageNumber)))
+
+	if pageNumber == 0 {
+		pageNumber = 1
+	}
+
+	offset := ((pageNumber - 1) * limit)
+
 	userId := utils.GetUserIdFromContext(w, r)
 	if userId == nil {
 		utils.HandleError(utils.TokenExpired, nil, w, nil)
@@ -194,9 +214,9 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 
 	listBuildQuery := `SELECT b.id, b.status, b.triggered_by, b.commit_hash, b.created_at FROM "deploy-io".builds b
 		JOIN "deploy-io".projects p ON p.id = b.project_id
-		WHERE b.project_id = $1 AND p.user_id = $2 ORDER BY b.id DESC;
+		WHERE b.project_id = $1 AND p.user_id = $2 ORDER BY b.id DESC LIMIT $3 OFFSET $4;
 	`
-	builds, rowsErr := config.DataBase.Query(listBuildQuery, projectId, userId)
+	builds, rowsErr := config.DataBase.Query(listBuildQuery, projectId, userId, limit, offset)
 	if rowsErr != nil {
 		utils.HandleError(utils.ErrInternal, rowsErr, w, nil)
 		return
@@ -209,8 +229,31 @@ func (b BuildHandler) ListBuilds(w http.ResponseWriter, r *http.Request) {
 		listBuilds = append(listBuilds, build)
 	}
 
-	response := map[string][]Build{
-		"builds": listBuilds,
+	totalItems := 0
+
+	countErr := config.DataBase.QueryRow(`
+		SELECT COUNT(*) FROM "deploy-io".builds b
+		JOIN "deploy-io".projects p ON p.id = b.project_id
+		WHERE b.project_id = $1 AND p.user_id = $2;
+	`, projectId, userId).Scan(&totalItems)
+
+	if countErr != nil {
+		utils.HandleError(utils.ErrInternal, countErr, w, nil)
+		return
+	}
+
+	type responseStruct struct {
+		Builds      []Build `json:"builds"`
+		CurrentPage int     `json:"currentPage"`
+		TotalItems  int     `json:"totalItems"`
+		TotalPages  int     `json:"totalPages"`
+	}
+
+	response := responseStruct{
+		Builds:      listBuilds,
+		CurrentPage: pageNumber,
+		TotalItems:  totalItems,
+		TotalPages:  (totalItems + limit - 1) / limit,
 	}
 
 	responseBody, responseErr := json.Marshal(response)
